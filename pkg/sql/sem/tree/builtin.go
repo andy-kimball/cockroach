@@ -39,7 +39,7 @@ var _ = NormalClass
 
 // Builtin is a built-in function.
 type Builtin struct {
-	Types      TypeList
+	Types      TypeSignature
 	ReturnType ReturnTyper
 
 	// PreferredOverload determines overload resolution as follows.
@@ -108,7 +108,7 @@ type Builtin struct {
 }
 
 // params implements the overloadImpl interface.
-func (b Builtin) params() TypeList { return b.Types }
+func (b Builtin) params() TypeSignature { return b.Types }
 
 // returnType implements the overloadImpl interface.
 func (b Builtin) returnType() ReturnTyper { return b.ReturnType }

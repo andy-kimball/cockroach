@@ -69,11 +69,11 @@ type UnaryOp struct {
 	ReturnType types.T
 	fn         func(*EvalContext, Datum) (Datum, error)
 
-	types   TypeList
+	types   TypeSignature
 	retType ReturnTyper
 }
 
-func (op UnaryOp) params() TypeList {
+func (op UnaryOp) params() TypeSignature {
 	return op.types
 }
 
@@ -185,17 +185,17 @@ type BinOp struct {
 	ReturnType types.T
 	fn         func(*EvalContext, Datum, Datum) (Datum, error)
 
-	types        TypeList
+	types        TypeSignature
 	retType      ReturnTyper
 	nullableArgs bool
 }
 
-func (op BinOp) params() TypeList {
+func (op BinOp) params() TypeSignature {
 	return op.types
 }
 
 func (op BinOp) matchParams(l, r types.T) bool {
-	return op.params().matchAt(l, 0) && op.params().matchAt(r, 1)
+	return op.params().MatchAt(l, 0) && op.params().MatchAt(r, 1)
 }
 
 func (op BinOp) returnType() ReturnTyper {
@@ -1383,15 +1383,15 @@ type CmpOp struct {
 	// Datum return type is a union between *DBool and dNull.
 	fn func(*EvalContext, Datum, Datum) (Datum, error)
 
-	types TypeList
+	types TypeSignature
 }
 
-func (op CmpOp) params() TypeList {
+func (op CmpOp) params() TypeSignature {
 	return op.types
 }
 
 func (op CmpOp) matchParams(l, r types.T) bool {
-	return op.params().matchAt(l, 0) && op.params().matchAt(r, 1)
+	return op.params().MatchAt(l, 0) && op.params().MatchAt(r, 1)
 }
 
 var cmpOpReturnType = FixedReturnType(types.Bool)

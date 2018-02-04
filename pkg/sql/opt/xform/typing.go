@@ -20,6 +20,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/sql/opt/opt"
 	"github.com/cockroachdb/cockroach/pkg/sql/sem/tree"
 	"github.com/cockroachdb/cockroach/pkg/sql/sem/types"
+	"github.com/cockroachdb/cockroach/pkg/sql/sem/builtins"
 )
 
 // inferType derives the type of the given scalar expression. Depending upon
@@ -49,6 +50,7 @@ func init() {
 		opt.ProjectionsOp: typeAsTuple,
 		opt.FiltersOp:     typeAsBool,
 		opt.ExistsOp:      typeAsBool,
+		opt.FunctionOp:    typeFunction,
 	}
 
 	for _, op := range opt.BooleanOperators {
@@ -137,6 +139,24 @@ func typeAsBinary(ev *ExprView) types.T {
 		o := op.(tree.BinOp)
 		if leftType.Equivalent(o.LeftType) && rightType.Equivalent(o.RightType) {
 			return o.ReturnType
+		}
+	}
+
+	panic(fmt.Sprintf("could not find type for binary expression: %v", ev))
+}
+
+func typeFunction(ev *ExprView) types.T {
+	def := ev.Private().(*tree.FunctionDefinition)
+	builtins := builtins.Builtins[def.Name]
+
+	argTypes := make([]types.T, ev.ChildCount())
+	for i := 0; i < ev.ChildCount(); i++ {
+		argTypes[i] = ev.Child(i).Logical().Scalar.Type
+	}
+
+	for _, builtin := range builtins {
+		if builtin.Types.Match(argTypes) {
+			return builtin.ReturnType
 		}
 	}
 

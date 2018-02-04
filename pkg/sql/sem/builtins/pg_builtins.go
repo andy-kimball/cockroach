@@ -87,7 +87,7 @@ func initPGBuiltins() {
 
 var errUnimplemented = pgerror.NewError(pgerror.CodeFeatureNotSupportedError, "unimplemented")
 
-func makeTypeIOBuiltin(argTypes tree.TypeList, returnType types.T) []tree.Builtin {
+func makeTypeIOBuiltin(argTypes tree.TypeSignature, returnType types.T) []tree.Builtin {
 	return []tree.Builtin{
 		{
 			Types:      argTypes,

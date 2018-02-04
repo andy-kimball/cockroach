@@ -76,14 +76,14 @@ func TestVariadicFunctions(t *testing.T) {
 			t.Run(fmt.Sprintf("%v/%v", fn, v), func(t *testing.T) {
 				if v.matches {
 					if !fn.matchLen(len(v.args)) {
-						t.Fatalf("expected fn %v to matchLen %v", fn, v.args)
+						t.Fatalf("expected fn %v to MatchLen %v", fn, v.args)
 					}
 
 					if !fn.match(v.args) {
-						t.Fatalf("expected fn %v to match %v", fn, v.args)
+						t.Fatalf("expected fn %v to Match %v", fn, v.args)
 					}
 				} else if fn.matchLen(len(v.args)) && fn.match(v.args) {
-					t.Fatalf("expected fn %v to not match %v", fn, v.args)
+					t.Fatalf("expected fn %v to not Match %v", fn, v.args)
 				}
 			})
 		}
@@ -96,7 +96,7 @@ type testOverload struct {
 	pref       bool
 }
 
-func (to *testOverload) params() TypeList {
+func (to *testOverload) params() TypeSignature {
 	return to.paramTypes
 }
 

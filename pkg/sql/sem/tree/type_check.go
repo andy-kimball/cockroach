@@ -208,7 +208,7 @@ func (expr *BinaryExpr) TypeCheck(ctx *SemaContext, desired types.T) (TypedExpr,
 	binOp := fns[0].(BinOp)
 	expr.Left, expr.Right = leftTyped, rightTyped
 	expr.fn = binOp
-	expr.typ = binOp.returnType()(typedSubExprs)
+	expr.typ = binOp.returnType()(typedExprsTList(typedSubExprs))
 	return expr, nil
 }
 
@@ -571,7 +571,7 @@ func (expr *FuncExpr) TypeCheck(ctx *SemaContext, desired types.T) (TypedExpr, e
 		expr.Exprs[i] = subExpr
 	}
 	expr.fn = builtin
-	expr.typ = builtin.returnType()(typedSubExprs)
+	expr.typ = builtin.returnType()(typedExprsTList(typedSubExprs))
 	return expr, nil
 }
 
@@ -745,7 +745,7 @@ func (expr *UnaryExpr) TypeCheck(ctx *SemaContext, desired types.T) (TypedExpr, 
 	unaryOp := fns[0].(UnaryOp)
 	expr.Expr = exprTyped
 	expr.fn = unaryOp
-	expr.typ = unaryOp.returnType()(typedSubExprs)
+	expr.typ = unaryOp.returnType()(typedExprsTList(typedSubExprs))
 	return expr, nil
 }
 
@@ -1581,6 +1581,32 @@ func checkTupleHasLength(t *Tuple, expectedLen int) error {
 		return pgerror.NewErrorf(pgerror.CodeDatatypeMismatchError, "expected tuple %v to have a length of %d", t, expectedLen)
 	}
 	return nil
+}
+
+// typedExprsTList is a wrapper around a slice of typed expressions that
+// implements the types.TypeList interface. As long as only the TypeAt and Length
+// methods are used, there's no need to allocate a slice of types. These
+// methods are not defined directly on TypedExprs because it fails the "is a"
+// test. TypedExprs is *not* a list of types. Rather, it *has a* list of types.
+type typedExprsTList []TypedExpr
+
+// TypeAt implements TypeList interface.
+func (elt typedExprsTList) TypeAt(i int) types.T {
+	return elt[i].ResolvedType()
+}
+
+// Length implements TypeList interface.
+func (elt typedExprsTList) Length() int {
+	return len(elt)
+}
+
+// Types implements TypeList interface.
+func (elt typedExprsTList) Types() []types.T {
+	types := make([]types.T, len(elt))
+	for i, e := range elt {
+		types[i] = e.ResolvedType()
+	}
+	return types
 }
 
 type placeholderAnnotationVisitor struct {

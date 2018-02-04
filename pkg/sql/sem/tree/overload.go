@@ -27,36 +27,46 @@ import (
 // overloadImpl is an implementation of an overloaded function. It provides
 // access to the parameter type list  and the return type of the implementation.
 type overloadImpl interface {
-	params() TypeList
+	params() TypeSignature
 	returnType() ReturnTyper
 	// allows manually resolving preference between multiple compatible overloads
 	preferred() bool
 }
 
-// TypeList is a list of types representing a function parameter list.
+// TypeList is a list of SQL types.
 type TypeList interface {
-	// match checks if all types in the TypeList match the corresponding elements in types.
-	match(types []types.T) bool
-	// matchAt checks if the parameter type at index i of the TypeList matches type typ.
-	// In all implementations, types.Null will match with each parameter type, allowing
-	// NULL values to be used as arguments.
-	matchAt(typ types.T, i int) bool
-	// matchLen checks that the TypeList can support l parameters.
-	matchLen(l int) bool
-	// getAt returns the type at the given index in the TypeList, or nil if the TypeList
-	// cannot have a parameter at index i.
-	getAt(i int) types.T
-	// Length returns the number of types in the list
+	// TypeAt returns the type at the given index in the list.
+	TypeAt(i int) types.T
+
+	// Length returns the number of types in the list.
 	Length() int
-	// Types returns a realized copy of the list. variadic lists return a list of size one.
+
+	// Types returns a realized copy of the list, which may trigger a heap
+	// allocation.
 	Types() []types.T
+}
+
+// TypeSignature defines the input argument types and return type for a
+// function. An overloaded function has multiple type signatures.
+type TypeSignature interface {
+	TypeList
+
+	// Match checks if all types in the TypeSignature match the corresponding
+	// elements in types.
+	Match(types []types.T) bool
+	// MatchAt checks if the parameter type at index i of the TypeSignature
+	// matches type typ. In all implementations, types.Null will match with
+	// each parameter type, allowing NULL values to be used as arguments.
+	MatchAt(typ types.T, i int) bool
+	// MatchLen checks that the TypeSignature can support l parameters.
+	MatchLen(l int) bool
 	// String returns a human readable signature
 	String() string
 }
 
-var _ TypeList = ArgTypes{}
-var _ TypeList = HomogeneousType{}
-var _ TypeList = VariadicType{}
+var _ TypeSignature = ArgTypes{}
+var _ TypeSignature = HomogeneousType{}
+var _ TypeSignature = VariadicType{}
 
 // ArgTypes is very similar to ArgTypes except it allows keeping a string
 // name for each argument as well and using those when printing the
@@ -66,19 +76,19 @@ type ArgTypes []struct {
 	Typ  types.T
 }
 
-func (a ArgTypes) match(types []types.T) bool {
+func (a ArgTypes) Match(types []types.T) bool {
 	if len(types) != len(a) {
 		return false
 	}
 	for i := range types {
-		if !a.matchAt(types[i], i) {
+		if !a.MatchAt(types[i], i) {
 			return false
 		}
 	}
 	return true
 }
 
-func (a ArgTypes) matchAt(typ types.T, i int) bool {
+func (a ArgTypes) MatchAt(typ types.T, i int) bool {
 	// The parameterized types for Tuples are checked in the type checking
 	// routines before getting here, so we only need to check if the argument
 	// type is a types.FamTuple below. This allows us to avoid defining overloads
@@ -90,20 +100,20 @@ func (a ArgTypes) matchAt(typ types.T, i int) bool {
 	return i < len(a) && (typ == types.Null || a[i].Typ.Equivalent(typ))
 }
 
-func (a ArgTypes) matchLen(l int) bool {
+func (a ArgTypes) MatchLen(l int) bool {
 	return len(a) == l
 }
 
-func (a ArgTypes) getAt(i int) types.T {
+func (a ArgTypes) TypeAt(i int) types.T {
 	return a[i].Typ
 }
 
-// Length implements the TypeList interface.
+// Length implements the TypeSignature interface.
 func (a ArgTypes) Length() int {
 	return len(a)
 }
 
-// Types implements the TypeList interface.
+// Types implements the TypeSignature interface.
 func (a ArgTypes) Types() []types.T {
 	n := len(a)
 	ret := make([]types.T, n)
@@ -126,33 +136,33 @@ func (a ArgTypes) String() string {
 	return s.String()
 }
 
-// HomogeneousType is a TypeList implementation that accepts any arguments, as
-// long as all are the same type or NULL. The homogeneous constraint is enforced
-// in typeCheckOverloadedExprs.
+// HomogeneousType is a TypeSignature implementation that accepts any
+// arguments, as long as all are the same type or NULL. The homogeneous
+// constraint is enforced in typeCheckOverloadedExprs.
 type HomogeneousType struct{}
 
-func (HomogeneousType) match(types []types.T) bool {
+func (HomogeneousType) Match(types []types.T) bool {
 	return true
 }
 
-func (HomogeneousType) matchAt(typ types.T, i int) bool {
+func (HomogeneousType) MatchAt(typ types.T, i int) bool {
 	return true
 }
 
-func (HomogeneousType) matchLen(l int) bool {
+func (HomogeneousType) MatchLen(l int) bool {
 	return true
 }
 
-func (HomogeneousType) getAt(i int) types.T {
+func (HomogeneousType) TypeAt(i int) types.T {
 	return types.Any
 }
 
-// Length implements the TypeList interface.
+// Length implements the TypeSignature interface.
 func (HomogeneousType) Length() int {
 	return 1
 }
 
-// Types implements the TypeList interface.
+// Types implements the TypeSignature interface.
 func (HomogeneousType) Types() []types.T {
 	return []types.T{types.Any}
 }
@@ -161,47 +171,47 @@ func (HomogeneousType) String() string {
 	return "anyelement..."
 }
 
-// VariadicType is a TypeList implementation which accepts a fixed number of
-// arguments at the beginning and an arbitrary number of homogenous arguments
-// at the end.
+// VariadicType is a TypeSignature implementation which accepts a fixed number
+// of arguments at the beginning and an arbitrary number of homogenous
+// arguments at the end.
 type VariadicType struct {
 	FixedTypes []types.T
 	VarType    types.T
 }
 
-func (v VariadicType) match(types []types.T) bool {
+func (v VariadicType) Match(types []types.T) bool {
 	for i := range types {
-		if !v.matchAt(types[i], i) {
+		if !v.MatchAt(types[i], i) {
 			return false
 		}
 	}
 	return true
 }
 
-func (v VariadicType) matchAt(typ types.T, i int) bool {
+func (v VariadicType) MatchAt(typ types.T, i int) bool {
 	if i < len(v.FixedTypes) {
 		return typ == types.Null || v.FixedTypes[i].Equivalent(typ)
 	}
 	return typ == types.Null || v.VarType.Equivalent(typ)
 }
 
-func (v VariadicType) matchLen(l int) bool {
+func (v VariadicType) MatchLen(l int) bool {
 	return l >= len(v.FixedTypes)
 }
 
-func (v VariadicType) getAt(i int) types.T {
+func (v VariadicType) TypeAt(i int) types.T {
 	if i < len(v.FixedTypes) {
 		return v.FixedTypes[i]
 	}
 	return v.VarType
 }
 
-// Length implements the TypeList interface.
+// Length implements the TypeSignature interface.
 func (v VariadicType) Length() int {
 	return len(v.FixedTypes) + 1
 }
 
-// Types implements the TypeList interface.
+// Types implements the TypeSignature interface.
 func (v VariadicType) Types() []types.T {
 	result := make([]types.T, len(v.FixedTypes)+1)
 	for i := range v.FixedTypes {
@@ -237,21 +247,21 @@ var UnknownReturnType types.T
 
 // ReturnTyper defines the type-level function in which a builtin function's return type
 // is determined. ReturnTypers should make sure to return unknownReturnType when necessary.
-type ReturnTyper func(args []TypedExpr) types.T
+type ReturnTyper func(argTypes TypeList) types.T
 
 // FixedReturnType functions simply return a fixed type, independent of argument types.
 func FixedReturnType(typ types.T) ReturnTyper {
-	return func(args []TypedExpr) types.T { return typ }
+	return func(argTypes TypeList) types.T { return typ }
 }
 
 // IdentityReturnType creates a returnType that is a projection of the idx'th
 // argument type.
 func IdentityReturnType(idx int) ReturnTyper {
-	return func(args []TypedExpr) types.T {
-		if len(args) == 0 {
+	return func(argTypes TypeList) types.T {
+		if argTypes == nil || argTypes.Length() == 0 {
 			return UnknownReturnType
 		}
-		return args[idx].ResolvedType()
+		return argTypes.TypeAt(idx)
 	}
 }
 
@@ -337,7 +347,7 @@ func typeCheckOverloadedExprs(
 	// Filter out incorrect parameter length overloads.
 	s.overloadIdxs = filterOverloads(s.overloads, s.overloadIdxs,
 		func(o overloadImpl) bool {
-			return o.params().matchLen(len(exprs))
+			return o.params().MatchLen(len(exprs))
 		})
 
 	// Filter out overloads which constants cannot become.
@@ -345,7 +355,7 @@ func typeCheckOverloadedExprs(
 		constExpr := exprs[i].(Constant)
 		s.overloadIdxs = filterOverloads(s.overloads, s.overloadIdxs,
 			func(o overloadImpl) bool {
-				return canConstantBecome(constExpr, o.params().getAt(i))
+				return canConstantBecome(constExpr, o.params().TypeAt(i))
 			})
 	}
 
@@ -359,7 +369,7 @@ func typeCheckOverloadedExprs(
 		if len(s.overloadIdxs) == 1 {
 			// Once we get down to a single overload candidate, begin desiring its
 			// parameter types for the corresponding argument expressions.
-			paramDesired = s.overloads[s.overloadIdxs[0]].params().getAt(i)
+			paramDesired = s.overloads[s.overloadIdxs[0]].params().TypeAt(i)
 		}
 		typ, err := exprs[i].TypeCheck(ctx, paramDesired)
 		if err != nil {
@@ -368,7 +378,7 @@ func typeCheckOverloadedExprs(
 		s.typedExprs[i] = typ
 		s.overloadIdxs = filterOverloads(s.overloads, s.overloadIdxs,
 			func(o overloadImpl) bool {
-				return o.params().matchAt(typ.ResolvedType(), i)
+				return o.params().MatchAt(typ.ResolvedType(), i)
 			})
 	}
 
@@ -427,7 +437,7 @@ func typeCheckOverloadedExprs(
 					for _, i := range s.constIdxs {
 						s.overloadIdxs = filterOverloads(s.overloads, s.overloadIdxs,
 							func(o overloadImpl) bool {
-								return o.params().getAt(i).Equivalent(homogeneousTyp)
+								return o.params().TypeAt(i).Equivalent(homogeneousTyp)
 							})
 					}
 				}
@@ -444,7 +454,7 @@ func typeCheckOverloadedExprs(
 				if natural != nil {
 					s.overloadIdxs = filterOverloads(s.overloads, s.overloadIdxs,
 						func(o overloadImpl) bool {
-							return o.params().getAt(i).Equivalent(natural)
+							return o.params().TypeAt(i).Equivalent(natural)
 						})
 				}
 			}
@@ -468,7 +478,7 @@ func typeCheckOverloadedExprs(
 			constExpr := exprs[i].(Constant)
 			s.overloadIdxs = filterOverloads(s.overloads, s.overloadIdxs,
 				func(o overloadImpl) bool {
-					_, err := constExpr.ResolveAsType(&SemaContext{}, o.params().getAt(i))
+					_, err := constExpr.ResolveAsType(&SemaContext{}, o.params().TypeAt(i))
 					return err == nil
 				})
 		}
@@ -482,7 +492,7 @@ func typeCheckOverloadedExprs(
 			for _, i := range s.constIdxs {
 				s.overloadIdxs = filterOverloads(s.overloads, s.overloadIdxs,
 					func(o overloadImpl) bool {
-						return o.params().getAt(i).Equivalent(bestConstType)
+						return o.params().TypeAt(i).Equivalent(bestConstType)
 					})
 			}
 			if types, fns, ok, err := checkReturn(ctx, s); ok {
@@ -506,7 +516,7 @@ func typeCheckOverloadedExprs(
 		for _, i := range s.placeholderIdxs {
 			s.overloadIdxs = filterOverloads(s.overloads, s.overloadIdxs,
 				func(o overloadImpl) bool {
-					return o.params().getAt(i).Equivalent(homogeneousTyp)
+					return o.params().TypeAt(i).Equivalent(homogeneousTyp)
 				})
 		}
 		if types, fns, ok, err := checkReturn(ctx, s); ok {
@@ -549,8 +559,8 @@ func typeCheckOverloadedExprs(
 				}
 				s.overloadIdxs = filterOverloads(s.overloads, s.overloadIdxs,
 					func(o overloadImpl) bool {
-						return o.params().getAt(0).Equivalent(leftType) &&
-							o.params().getAt(1).Equivalent(rightType)
+						return o.params().TypeAt(0).Equivalent(leftType) &&
+							o.params().TypeAt(1).Equivalent(rightType)
 					})
 			}
 		}); ok {
@@ -657,7 +667,7 @@ func checkReturn(
 		o := s.overloads[idx]
 		p := o.params()
 		for _, i := range s.constIdxs {
-			des := p.getAt(i)
+			des := p.TypeAt(i)
 			typ, err := s.exprs[i].TypeCheck(ctx, des)
 			if err != nil {
 				return s.typedExprs, nil, true, errors.Wrap(err, "error type checking constant value")
@@ -669,7 +679,7 @@ func checkReturn(
 		}
 
 		for _, i := range s.placeholderIdxs {
-			des := p.getAt(i)
+			des := p.TypeAt(i)
 			typ, err := s.exprs[i].TypeCheck(ctx, des)
 			if err != nil {
 				return s.typedExprs, nil, true, err
@@ -690,7 +700,7 @@ func formatCandidates(prefix string, candidates []overloadImpl) string {
 		params := candidate.params()
 		tLen := params.Length()
 		for i := 0; i < tLen; i++ {
-			t := params.getAt(i)
+			t := params.TypeAt(i)
 			if i > 0 {
 				buf.WriteString(", ")
 			}
