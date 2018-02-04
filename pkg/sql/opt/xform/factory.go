@@ -19,6 +19,9 @@ import (
 
 	"github.com/cockroachdb/cockroach/pkg/sql/opt/opt"
 	"github.com/cockroachdb/cockroach/pkg/sql/optbase"
+	"github.com/cockroachdb/cockroach/pkg/sql/sem/builtins"
+	"github.com/cockroachdb/cockroach/pkg/sql/sem/tree"
+	"github.com/cockroachdb/cockroach/pkg/sql/sem/types"
 )
 
 //go:generate optgen -out factory.og.go factory ../ops/scalar.opt ../ops/relational.opt ../ops/enforcer.opt rules/bool.opt rules/comp.opt
@@ -280,4 +283,55 @@ func (f *factory) normalizeTupleEquality(left, right opt.ListID) opt.GroupID {
 		conditions[i] = f.ConstructEq(leftList[i], rightList[i])
 	}
 	return f.ConstructAnd(f.InternList(conditions))
+}
+
+// ----------------------------------------------------------------------
+//
+// Function Rules
+//   Custom match and replace functions used with builtin functions.
+//
+// ----------------------------------------------------------------------
+
+// lookupFunction takes a builtin function name and a list of arguments, and
+// constructs a function op. This is complicated by polymorphic functions. SQL
+// functions with just one overload can be resolved from the name alone. And
+// almost all functions with multiple overloads can be resolved from the name
+// plus the argument types. That leaves a handful of functions which can only
+// be resolved with additional context. lookupFunction does not currently
+// support construction of those few ambiguous functions. For example, both the
+// NOW and CURRENT_TIMESTAMP functions return either a timestamp value or a
+// timestamptz value depending on context, and so cannot be constructed here.
+func (f *factory) lookupFunction(name string, args opt.ListID) opt.GroupID {
+	overloads := builtins.Builtins[name]
+	if len(overloads) == 0 {
+		panic(fmt.Sprintf("could not find %s function", name))
+	}
+
+	// Allocate slice of arg types to match against.
+	list := f.mem.lookupList(args)
+	argTypes := make([]types.T, args.Length)
+	for i := 0; i < int(args.Length); i++ {
+		// Get type of each of the arguments from its group's logical properties.
+		argTypes[i] = f.mem.lookupGroup(list[i]).logical.Scalar.Type
+	}
+
+	var builtin *tree.Builtin
+	for i := range overloads {
+		overload := &overloads[i]
+		if overload.Types.Match(argTypes) {
+			if builtin != nil {
+				panic(fmt.Sprintf("lookup failed for function %s because it is ambiguous", name))
+			}
+			builtin = overload
+		}
+	}
+
+	if builtin == nil {
+		panic(fmt.Sprintf("could not find type for function %s", name))
+	}
+
+	typ := builtin.ReturnType(argTypes)
+
+	def := opt.FuncDef{Name: name, Type: typ, Builtin: builtin}
+	return f.ConstructFunction(args, f.mem.internPrivate(def))
 }

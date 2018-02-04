@@ -295,3 +295,8 @@ project
       │    └── variable: a.y [type=int]
       └── unary-complement [type=int]
            └── variable: a.x [type=int]
+
+# Function with fixed return type.
+build
+SELECT length('text')
+----
