@@ -16,6 +16,7 @@ package xform
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/cockroachdb/cockroach/pkg/sql/opt"
 	"github.com/cockroachdb/cockroach/pkg/sql/opt/memo"
@@ -41,6 +42,11 @@ type Optimizer struct {
 	coster   coster
 	explorer explorer
 
+	// pass tracks the current optimization pass, including both its major
+	// component (number of passes over entire tree) and its minor component
+	// (number of passes over current expression).
+	pass optimizePass
+
 	// stateMap allocates temporary storage that's used to speed up optimization.
 	// This state could be discarded once optimization is complete.
 	stateMap   map[optStateKey]*optState
@@ -59,6 +65,7 @@ func NewOptimizer(evalCtx *tree.EvalContext) *Optimizer {
 		evalCtx:  evalCtx,
 		f:        f,
 		mem:      f.Memo(),
+		pass:     optimizePass{major: 1},
 		stateMap: make(map[optStateKey]*optState),
 	}
 	o.coster.init(o.mem)
@@ -105,14 +112,17 @@ func (o *Optimizer) Memo() *memo.Memo {
 // of the qualifying lowest cost expressions may be selected by the optimizer.
 func (o *Optimizer) Optimize(root memo.GroupID, requiredProps *memo.PhysicalProps) memo.ExprView {
 	required := o.mem.InternPhysicalProps(requiredProps)
-	state := o.optimizeGroup(root, required)
+	state := o.optimizeGroup(root, required, memo.MaxCost)
 	return memo.MakeExprView(o.mem, state.best)
 }
 
 // optimizeGroup enumerates expression trees rooted in the given memo group and
 // finds the expression tree with the lowest cost (i.e. the "best") that
 // provides the given required physical properties. Enforcers are added as
-// needed to provide the required properties.
+// needed to provide the required properties. The budget parameter gives the
+// maximum allowable cost for the expression. If the running cost of the
+// expression goes above that level, then the search can be abandoned early,
+// since another equivalent expression of lower cost has already been found.
 //
 // The following is a simplified walkthrough of how the optimizer might handle
 // the following SQL query:
@@ -252,15 +262,20 @@ func (o *Optimizer) Optimize(root memo.GroupID, requiredProps *memo.PhysicalProp
 //              ├── variable: a.x [type=int]
 //              └── const: 1 [type=int]
 //
-func (o *Optimizer) optimizeGroup(group memo.GroupID, required memo.PhysicalPropsID) *optState {
-	// If this group is already fully optimized, then return the already
-	// prepared best expression (won't ever get better than this).
+func (o *Optimizer) optimizeGroup(
+	group memo.GroupID, required memo.PhysicalPropsID, budget memo.Cost,
+) *optState {
+	// If this group was already optimized during this pass for the given
+	// required properties, or if it's already fully optimized, then return the
+	// already prepared best expression.
 	state := o.ensureOptState(group, required)
-	if state.fullyOptimized {
+	if state.wasOptimizedSince(o.pass) {
 		return state
 	}
 
-	// Iterate until the group has been fully optimized.
+	// As long as there's been some improvement to the best expression, then
+	// keep optimizing the group.
+	pass := o.pass
 	for {
 		fullyOptimized := true
 
@@ -273,8 +288,14 @@ func (o *Optimizer) optimizeGroup(group memo.GroupID, required memo.PhysicalProp
 				continue
 			}
 
+			// Lower the available budget even further if an expression with a
+			// lower cost has previously been discovered for this group.
+			if state.cost.Less(budget) {
+				budget = state.cost
+			}
+
 			// Optimize the expression with respect to the required properties.
-			state = o.optimizeExpr(eid, required)
+			state = o.optimizeExpr(eid, required, budget)
 
 			// If any of the expressions have not yet been fully optimized, then
 			// the group is not yet fully optimized.
@@ -293,7 +314,16 @@ func (o *Optimizer) optimizeGroup(group memo.GroupID, required memo.PhysicalProp
 			// If exploration and costing of this group for the given required
 			// properties is complete, then skip it in all future optimization
 			// passes.
-			state.fullyOptimized = true
+			state.lastOptimized = fullyOptimizedPass
+			break
+		}
+
+		// This group has been optimized during this pass but there may be further
+		// iterations.
+		state.lastOptimized = pass
+		if state.lastImproved.Less(pass) {
+			// The best expression did not improve, so iterations are complete
+			// during this pass
 			break
 		}
 	}
@@ -307,7 +337,9 @@ func (o *Optimizer) optimizeGroup(group memo.GroupID, required memo.PhysicalProp
 // calls enforceProps to check whether enforcers can provide the required
 // properties at a lower cost. The lowest cost expression is saved to the memo
 // group.
-func (o *Optimizer) optimizeExpr(eid memo.ExprID, required memo.PhysicalPropsID) *optState {
+func (o *Optimizer) optimizeExpr(
+	eid memo.ExprID, required memo.PhysicalPropsID, budget memo.Cost,
+) *optState {
 	// Compute the cost for enforcers to provide the required properties. This
 	// may be lower than the expression providing the properties itself. For
 	// example, it might be better to sort the results of a hash join than to
@@ -467,11 +499,13 @@ type optState struct {
 	// set of physical properties.
 	best memo.BestExprID
 
-	// fullyOptimized is set to true once the lowest cost expression has been
-	// found for a memo group, with respect to the required properties. A lower
-	// cost expression will never be found, no matter how many additional
-	// optimization passes are made.
-	fullyOptimized bool
+	// lastOptimized is the pass in which this expression was last optimized.
+	// A given expression is optimized at most once per optimization pass.
+	lastOptimized optimizePass
+
+	// cost estimates how expensive the best expression will be to execute. That
+	// could be according to resource consumption, latency, or other metrics.
+	cost memo.Cost
 
 	// fullyOptimizedExprs contains the set of expression ids (exprIDs) that
 	// have been fully optimized for the required properties. These never need
@@ -482,6 +516,21 @@ type optState struct {
 	// explore is used by the explorer to store intermediate state so that
 	// redundant work is minimized.
 	explore exploreState
+}
+
+// isFullyOptimized is true once the lowest cost expression has been found for
+// a memo group, with respect to the required properties. A lower cost
+// expression will never be found, no matter how many additional optimization
+// passes are made.
+func (os *optState) isFullyOptimized() bool {
+	return os.lastOptimized == fullyOptimizedPass
+}
+
+// wasOptimizedSince returns true if the expression was optimized during or
+// after the given optimization pass, or if all possible optimizations have
+// already been applied so that the cost will never improve.
+func (os *optState) wasOptimizedSince(pass optimizePass) bool {
+	return !os.lastOptimized.Less(pass)
 }
 
 // isExprFullyOptimized returns true if the given expression has been fully
@@ -495,7 +544,7 @@ func (os *optState) isExprFullyOptimized(eid memo.ExprID) bool {
 // the required properties. The expression never needs to be recosted, no
 // matter how many additional optimization passes are made.
 func (os *optState) markExprAsFullyOptimized(eid memo.ExprID) {
-	if os.fullyOptimized {
+	if os.isFullyOptimized() {
 		panic("best expression is already fully optimized")
 	}
 	if os.isExprFullyOptimized(eid) {
@@ -535,4 +584,23 @@ func (a optStateAlloc) allocate() *optState {
 	}
 	a.page = a.page[:len(a.page)+1]
 	return &a.page[len(a.page)-1]
+}
+
+type optimizePass struct {
+	major uint16
+	minor uint16
+}
+
+var fullyOptimizedPass = optimizePass{major: math.MaxInt16, minor: math.MaxInt16}
+
+func (p optimizePass) Less(other optimizePass) bool {
+	if p.major < other.major {
+		return true
+	}
+
+	if p.major == other.major {
+		return p.minor < other.minor
+	}
+
+	return false
 }
