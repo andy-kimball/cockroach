@@ -333,6 +333,15 @@ func (ev ExprView) formatRelational(tp treeprinter.Node, flags ExprFmtFlags) {
 		}
 	}
 
+	if logProps.Relational.Constraints != nil {
+
+	}
+
+	fmt.Fprintf(&buf, "constraints=(%s", scalar.Constraints)
+	if scalar.TightConstraints {
+		buf.WriteString("; tight")
+	}
+
 	if !flags.HasFlags(ExprFmtHideStats) {
 		ev.formatStats(tp, &logProps.Relational.Stats)
 	}
@@ -345,6 +354,8 @@ func (ev ExprView) formatRelational(tp treeprinter.Node, flags ExprFmtFlags) {
 	if !flags.HasFlags(ExprFmtHideKeys) {
 		ev.formatWeakKeys(tp)
 	}
+
+	buf.WriteString(")")
 
 	if physProps.Ordering.Defined() {
 		tp.Childf("ordering: %s", physProps.Ordering.String())

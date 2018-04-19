@@ -373,6 +373,8 @@ func (f *Factory) hasSubsetCols(left, right memo.GroupID) bool {
 	return f.outputCols(left).SubsetOf(f.outputCols(right))
 }
 
+func (f *Factory) canBeNull(variable memo.GroupID)
+
 // ----------------------------------------------------------------------
 //
 // Project Rules

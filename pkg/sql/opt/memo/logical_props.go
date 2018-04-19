@@ -77,6 +77,8 @@ type RelationalProps struct {
 	// every other key (i.e. every other key would be redundant).
 	WeakKeys opt.WeakKeys
 
+	Constraints *constraint.Set
+
 	// OuterCols is the set of columns that are referenced by variables within
 	// this relational sub-expression, but are not bound within the scope of
 	// the expression. For example:

@@ -77,7 +77,45 @@ func (c *Constraint) IsUnconstrained() bool {
 	return c.Spans.Count() == 1 && c.Spans.Get(0).IsUnconstrained()
 }
 
-// UnionWith merges the spans of the given constraint into this constraint.  The
+func (c *Constraint) SingleValuePrefix(evalCtx *tree.EvalContext) int {
+	for col := 0; ; col++ {
+		// Check if all spans have the same start/end key for this column.
+		for i := 0; i < c.Spans.Count(); i++ {
+			sp := c.Spans.Get(i)
+			if sp.start.Length() <= col || sp.end.Length() <= col {
+				return col
+			}
+			if sp.start.Value(col).Compare(evalCtx, sp.end.Value(col)) != 0 {
+				return col
+			}
+		}
+	}
+}
+
+func (c *Constraint) IncludeNulls(evalCtx *tree.EvalContext) {
+	for i := 0; i < c.Spans.Count(); i++ {
+		span := c.Spans.Get(i)
+		if span.startBoundary == ExcludeBoundary {
+			if span.start.Value(span.start.Length()-1) == tree.DNull {
+
+			}
+		}
+
+	}
+}
+
+func (s *Set) ExcludeNulls() *Set {
+	for c := 0; c < s.Length(); c++ {
+		constraint := s.Constraint(c)
+
+		for s := 0; s < constraint.Spans.Count(); s++ {
+			span := constraint.Spans.Get(s)
+			span
+		}
+	}
+}
+
+// UnionWith merges the spans of the given constraint into this constraint. The
 // columns of both constraints must be the same. Constrained columns in the
 // merged constraint can have values that are part of either of the input
 // constraints.

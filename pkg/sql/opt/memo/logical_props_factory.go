@@ -121,6 +121,9 @@ func (f logicalPropsFactory) constructSelectProps(ev ExprView) LogicalProps {
 	// Inherit input properties as starting point.
 	*props.Relational = *inputProps
 
+	// Select filter further constrains any input column constraints.
+	props.Relational.Constraints = inputProps.Constraints.Intersect(f.evalCtx, inputProps.Constraints)
+
 	props.Relational.Stats.initSelect(f.evalCtx, ev.Child(1), &inputProps.Stats)
 
 	return props
@@ -145,6 +148,9 @@ func (f logicalPropsFactory) constructProjectProps(ev ExprView) LogicalProps {
 	// Inherit weak keys that are composed entirely of output columns.
 	props.Relational.WeakKeys = inputProps.WeakKeys
 	filterWeakKeys(props.Relational)
+
+	// Inherit constraints that are composed entirely of output columns.
+	props.Relational.Constraints = inputProps.Constraints.FilterByColumns(props.Relational.OutputCols)
 
 	props.Relational.Stats.initProject(&inputProps.Stats, &props.Relational.OutputCols)
 
@@ -185,6 +191,8 @@ func (f logicalPropsFactory) constructJoinProps(ev ExprView) LogicalProps {
 	default:
 		props.Relational.NotNullCols.UnionWith(leftProps.NotNullCols)
 	}
+
+	// Join constraints are union
 
 	// TODO(andyk): Need to derive weak keys for joins, for example when weak
 	//              keys on both sides are equivalent cols.

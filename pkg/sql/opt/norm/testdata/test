@@ -1,0 +1,258 @@
+exec-ddl
+CREATE TABLE a
+(
+    k INT PRIMARY KEY,
+    i INT NOT NULL,
+    f FLOAT,
+    s STRING NOT NULL,
+    j JSON,
+    UNIQUE INDEX si_idx (s DESC, i) STORING (j),
+    UNIQUE INDEX fi_idx (f, i)
+)
+----
+TABLE a
+ ├── k int not null
+ ├── i int not null
+ ├── f float
+ ├── s string not null
+ ├── j jsonb
+ ├── INDEX primary
+ │    └── k int not null
+ ├── INDEX si_idx
+ │    ├── s string not null desc
+ │    ├── i int not null
+ │    ├── k int not null (storing)
+ │    └── j jsonb (storing)
+ └── INDEX fi_idx
+      ├── f float
+      ├── i int not null
+      └── k int not null (storing)
+
+optsteps
+SELECT CASE BOOL_AND(i IS NULL) WHEN True THEN Null WHEN False THEN True ELSE False END
+FROM a
+WHERE (50 < i OR i IS NULL)
+----
+----
+*** Initial expr:
+  project
+   ├── columns: column8:8(bool)
+   ├── keys: ()
+   ├── group-by
+   │    ├── columns: column7:7(bool)
+   │    ├── keys: ()
+   │    ├── project
+   │    │    ├── columns: column6:6(bool)
+   │    │    ├── select
+   │    │    │    ├── columns: a.k:1(int!null) a.i:2(int!null) a.f:3(float) a.s:4(string!null) a.j:5(jsonb)
+   │    │    │    ├── keys: (1) (2,4) weak(2,3)
+   │    │    │    ├── scan a
+   │    │    │    │    ├── columns: a.k:1(int!null) a.i:2(int!null) a.f:3(float) a.s:4(string!null) a.j:5(jsonb)
+   │    │    │    │    └── keys: (1) (2,4) weak(2,3)
+   │    │    │    └── or [type=bool, outer=(2)]
+   │    │    │         ├── lt [type=bool, outer=(2)]
+   │    │    │         │    ├── const: 50 [type=int]
+   │    │    │         │    └── variable: a.i [type=int, outer=(2)]
+   │    │    │         └── is [type=bool, outer=(2)]
+   │    │    │              ├── variable: a.i [type=int, outer=(2)]
+   │    │    │              └── null [type=unknown]
+   │    │    └── projections [outer=(2)]
+   │    │         └── is [type=bool, outer=(2)]
+   │    │              ├── variable: a.i [type=int, outer=(2)]
+   │    │              └── null [type=unknown]
+   │    └── aggregations [outer=(6)]
+   │         └── function: bool_and [type=bool, outer=(6)]
+   │              └── variable: column6 [type=bool, outer=(6)]
+   └── projections [outer=(7)]
+        └── case [type=bool, outer=(7)]
+             ├── variable: column7 [type=bool, outer=(7)]
+             ├── when [type=unknown]
+             │    ├── true [type=bool]
+             │    └── null [type=unknown]
+             ├── when [type=bool]
+             │    ├── false [type=bool]
+             │    └── true [type=bool]
+             └── false [type=bool]
+
+*** CommuteVarInequality applied; best expr changed:
+   project
+    ├── columns: column8:8(bool)
+    ├── keys: ()
+    ├── group-by
+    │    ├── columns: column7:7(bool)
+    │    ├── keys: ()
+    │    ├── project
+    │    │    ├── columns: column6:6(bool)
+    │    │    ├── select
+    │    │    │    ├── columns: a.k:1(int!null) a.i:2(int!null) a.f:3(float) a.s:4(string!null) a.j:5(jsonb)
+    │    │    │    ├── keys: (1) (2,4) weak(2,3)
+    │    │    │    ├── scan a
+    │    │    │    │    ├── columns: a.k:1(int!null) a.i:2(int!null) a.f:3(float) a.s:4(string!null) a.j:5(jsonb)
+    │    │    │    │    └── keys: (1) (2,4) weak(2,3)
+    │    │    │    └── or [type=bool, outer=(2)]
+  - │    │    │         ├── lt [type=bool, outer=(2)]
+  - │    │    │         │    ├── const: 50 [type=int]
+  - │    │    │         │    └── variable: a.i [type=int, outer=(2)]
+  + │    │    │         ├── gt [type=bool, outer=(2), constraints=(/2: [/51 - ]; tight)]
+  + │    │    │         │    ├── variable: a.i [type=int, outer=(2)]
+  + │    │    │         │    └── const: 50 [type=int]
+    │    │    │         └── is [type=bool, outer=(2)]
+    │    │    │              ├── variable: a.i [type=int, outer=(2)]
+    │    │    │              └── null [type=unknown]
+    │    │    └── projections [outer=(2)]
+    │    │         └── is [type=bool, outer=(2)]
+    │    │              ├── variable: a.i [type=int, outer=(2)]
+    │    │              └── null [type=unknown]
+    │    └── aggregations [outer=(6)]
+    │         └── function: bool_and [type=bool, outer=(6)]
+    │              └── variable: column6 [type=bool, outer=(6)]
+    └── projections [outer=(7)]
+         └── case [type=bool, outer=(7)]
+              ├── variable: column7 [type=bool, outer=(7)]
+              ├── when [type=unknown]
+              │    ├── true [type=bool]
+              │    └── null [type=unknown]
+              ├── when [type=bool]
+              │    ├── false [type=bool]
+              │    └── true [type=bool]
+              └── false [type=bool]
+
+*** EnsureSelectFilters applied; best expr changed:
+   project
+    ├── columns: column8:8(bool)
+    ├── keys: ()
+    ├── group-by
+    │    ├── columns: column7:7(bool)
+    │    ├── keys: ()
+    │    ├── project
+    │    │    ├── columns: column6:6(bool)
+    │    │    ├── select
+    │    │    │    ├── columns: a.k:1(int!null) a.i:2(int!null) a.f:3(float) a.s:4(string!null) a.j:5(jsonb)
+    │    │    │    ├── keys: (1) (2,4) weak(2,3)
+    │    │    │    ├── scan a
+    │    │    │    │    ├── columns: a.k:1(int!null) a.i:2(int!null) a.f:3(float) a.s:4(string!null) a.j:5(jsonb)
+    │    │    │    │    └── keys: (1) (2,4) weak(2,3)
+  - │    │    │    └── or [type=bool, outer=(2)]
+  - │    │    │         ├── gt [type=bool, outer=(2), constraints=(/2: [/51 - ]; tight)]
+  - │    │    │         │    ├── variable: a.i [type=int, outer=(2)]
+  - │    │    │         │    └── const: 50 [type=int]
+  - │    │    │         └── is [type=bool, outer=(2)]
+  - │    │    │              ├── variable: a.i [type=int, outer=(2)]
+  - │    │    │              └── null [type=unknown]
+  + │    │    │    └── filters [type=bool, outer=(2)]
+  + │    │    │         └── or [type=bool, outer=(2)]
+  + │    │    │              ├── gt [type=bool, outer=(2), constraints=(/2: [/51 - ]; tight)]
+  + │    │    │              │    ├── variable: a.i [type=int, outer=(2)]
+  + │    │    │              │    └── const: 50 [type=int]
+  + │    │    │              └── is [type=bool, outer=(2)]
+  + │    │    │                   ├── variable: a.i [type=int, outer=(2)]
+  + │    │    │                   └── null [type=unknown]
+    │    │    └── projections [outer=(2)]
+    │    │         └── is [type=bool, outer=(2)]
+    │    │              ├── variable: a.i [type=int, outer=(2)]
+    │    │              └── null [type=unknown]
+    │    └── aggregations [outer=(6)]
+    │         └── function: bool_and [type=bool, outer=(6)]
+    │              └── variable: column6 [type=bool, outer=(6)]
+    └── projections [outer=(7)]
+         └── case [type=bool, outer=(7)]
+              ├── variable: column7 [type=bool, outer=(7)]
+              ├── when [type=unknown]
+              │    ├── true [type=bool]
+              │    └── null [type=unknown]
+              ├── when [type=bool]
+              │    ├── false [type=bool]
+              │    └── true [type=bool]
+              └── false [type=bool]
+
+*** FilterUnusedSelectCols applied; best expr changed:
+   project
+    ├── columns: column8:8(bool)
+    ├── keys: ()
+    ├── group-by
+    │    ├── columns: column7:7(bool)
+    │    ├── keys: ()
+    │    ├── project
+    │    │    ├── columns: column6:6(bool)
+    │    │    ├── select
+  - │    │    │    ├── columns: a.k:1(int!null) a.i:2(int!null) a.f:3(float) a.s:4(string!null) a.j:5(jsonb)
+  - │    │    │    ├── keys: (1) (2,4) weak(2,3)
+  + │    │    │    ├── columns: a.i:2(int!null)
+    │    │    │    ├── scan a
+  - │    │    │    │    ├── columns: a.k:1(int!null) a.i:2(int!null) a.f:3(float) a.s:4(string!null) a.j:5(jsonb)
+  - │    │    │    │    └── keys: (1) (2,4) weak(2,3)
+  + │    │    │    │    └── columns: a.i:2(int!null)
+    │    │    │    └── filters [type=bool, outer=(2)]
+    │    │    │         └── or [type=bool, outer=(2)]
+    │    │    │              ├── gt [type=bool, outer=(2), constraints=(/2: [/51 - ]; tight)]
+    │    │    │              │    ├── variable: a.i [type=int, outer=(2)]
+    │    │    │              │    └── const: 50 [type=int]
+    │    │    │              └── is [type=bool, outer=(2)]
+    │    │    │                   ├── variable: a.i [type=int, outer=(2)]
+    │    │    │                   └── null [type=unknown]
+    │    │    └── projections [outer=(2)]
+    │    │         └── is [type=bool, outer=(2)]
+    │    │              ├── variable: a.i [type=int, outer=(2)]
+    │    │              └── null [type=unknown]
+    │    └── aggregations [outer=(6)]
+    │         └── function: bool_and [type=bool, outer=(6)]
+    │              └── variable: column6 [type=bool, outer=(6)]
+    └── projections [outer=(7)]
+         └── case [type=bool, outer=(7)]
+              ├── variable: column7 [type=bool, outer=(7)]
+              ├── when [type=unknown]
+              │    ├── true [type=bool]
+              │    └── null [type=unknown]
+              ├── when [type=bool]
+              │    ├── false [type=bool]
+              │    └── true [type=bool]
+              └── false [type=bool]
+
+*** GenerateIndexScans applied; best expr unchanged.
+
+*** ConstrainScan applied; best expr unchanged.
+
+*** ConstrainScan applied; best expr unchanged.
+
+*** ConstrainScan applied; best expr unchanged.
+
+*** Final best expr:
+  project
+   ├── columns: column8:8(bool)
+   ├── keys: ()
+   ├── group-by
+   │    ├── columns: column7:7(bool)
+   │    ├── keys: ()
+   │    ├── project
+   │    │    ├── columns: column6:6(bool)
+   │    │    ├── select
+   │    │    │    ├── columns: a.i:2(int!null)
+   │    │    │    ├── scan a
+   │    │    │    │    └── columns: a.i:2(int!null)
+   │    │    │    └── filters [type=bool, outer=(2)]
+   │    │    │         └── or [type=bool, outer=(2)]
+   │    │    │              ├── gt [type=bool, outer=(2), constraints=(/2: [/51 - ]; tight)]
+   │    │    │              │    ├── variable: a.i [type=int, outer=(2)]
+   │    │    │              │    └── const: 50 [type=int]
+   │    │    │              └── is [type=bool, outer=(2)]
+   │    │    │                   ├── variable: a.i [type=int, outer=(2)]
+   │    │    │                   └── null [type=unknown]
+   │    │    └── projections [outer=(2)]
+   │    │         └── is [type=bool, outer=(2)]
+   │    │              ├── variable: a.i [type=int, outer=(2)]
+   │    │              └── null [type=unknown]
+   │    └── aggregations [outer=(6)]
+   │         └── function: bool_and [type=bool, outer=(6)]
+   │              └── variable: column6 [type=bool, outer=(6)]
+   └── projections [outer=(7)]
+        └── case [type=bool, outer=(7)]
+             ├── variable: column7 [type=bool, outer=(7)]
+             ├── when [type=unknown]
+             │    ├── true [type=bool]
+             │    └── null [type=unknown]
+             ├── when [type=bool]
+             │    ├── false [type=bool]
+             │    └── true [type=bool]
+             └── false [type=bool]
+----
+----

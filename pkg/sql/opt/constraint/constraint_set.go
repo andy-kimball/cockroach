@@ -17,6 +17,7 @@ package constraint
 import (
 	"strings"
 
+	"github.com/cockroachdb/cockroach/pkg/sql/opt"
 	"github.com/cockroachdb/cockroach/pkg/sql/sem/tree"
 )
 
@@ -246,6 +247,56 @@ func (s *Set) Union(evalCtx *tree.EvalContext, other *Set) *Set {
 		otherIndex++
 	}
 	return mergeSet
+}
+
+func (s *Set) ExcludeNulls() *Set {
+	for c := 0; c < s.Length(); c++ {
+		constraint := s.Constraint(c)
+
+		for s := 0; s < constraint.Spans.Count(); s++ {
+			span := constraint.Spans.Get(s)
+			span
+		}
+	}
+}
+
+func (s *Set) FilterByColumns(cs opt.ColSet) *Set {
+	var newSet *Set
+
+	for i := 0; i < s.Length(); i++ {
+		constraint := s.Constraint(i)
+
+		foundCols := true
+		for c := 0; c < constraint.Columns.Count(); c++ {
+			if !cs.Contains(int(constraint.Columns.Get(c).ID())) {
+				foundCols = false
+				break
+			}
+		}
+
+		if !foundCols {
+			// Found a constraint with a column not in the set, so a new
+			// set will have to be built.
+			if newSet == nil {
+				newSet = &Set{}
+				newSet.appendFrom(s, i, s.Length()-1)
+			}
+		} else if newSet != nil {
+			// Append constraint to new set.
+			*newSet.allocConstraint(s.Length() - 1) = *s.Constraint(i)
+		}
+	}
+
+	if newSet != nil {
+		return newSet
+	}
+	return s
+}
+
+func (s *Set) appendFrom(other *Set, count int, capacity int) {
+	for i := 0; i < count; i++ {
+		*s.allocConstraint(capacity) = *other.Constraint(i)
+	}
 }
 
 // allocConstraint allocates space for a new constraint in the set and returns

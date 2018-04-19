@@ -207,3 +207,9 @@
     )
     (Filters (ExtractCorrelatedConditions $list (OutputCols $aggregations)))
 )
+
+[EliminateIsNull, Normalize]
+(Select
+    $input:*
+    (Filters $list:[ ... $condition:(Is (Variable) (Null)) ... ])
+)
