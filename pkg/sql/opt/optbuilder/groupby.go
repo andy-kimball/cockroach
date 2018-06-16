@@ -43,7 +43,6 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/sql/opt"
 	"github.com/cockroachdb/cockroach/pkg/sql/opt/memo"
 	"github.com/cockroachdb/cockroach/pkg/sql/opt/norm"
-	"github.com/cockroachdb/cockroach/pkg/sql/opt/props"
 	"github.com/cockroachdb/cockroach/pkg/sql/pgwire/pgerror"
 	"github.com/cockroachdb/cockroach/pkg/sql/sem/transform"
 	"github.com/cockroachdb/cockroach/pkg/sql/sem/tree"
@@ -140,9 +139,9 @@ func (b *Builder) constructGroupBy(
 
 	// TODO(justin): we should have a whitelist somewhere of ordering-sensitive
 	// aggregations and only propagate the ordering if we have one here.
-	var ordering props.Ordering
+	var ordering opt.Ordering
 	if len(cols) > 0 {
-		ordering = fromScope.physicalProps.Ordering
+		ordering = fromScope.physicalProps.Ordering.Cols()
 	}
 
 	return b.factory.ConstructGroupBy(

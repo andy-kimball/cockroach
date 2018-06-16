@@ -432,6 +432,36 @@ func (f *FuncDepSet) ReduceCols(cols opt.ColSet) opt.ColSet {
 	return cols
 }
 
+func (f *FuncDepSet) ComputeEquivClosure(cols opt.ColSet) opt.ColSet {
+	cols = cols.Copy()
+	for i := 0; i < len(f.deps); i++ {
+		fd := &f.deps[i]
+
+		if fd.equiv && fd.from.SubsetOf(cols) && !fd.to.SubsetOf(cols) {
+			cols.UnionWith(fd.to)
+
+			// Restart iteration to get transitive closure.
+			i = -1
+		}
+	}
+	return cols
+}
+
+func (f *FuncDepSet) ComputeClosure(cols opt.ColSet) opt.ColSet {
+	cols = cols.Copy()
+	for i := 0; i < len(f.deps); i++ {
+		fd := &f.deps[i]
+
+		if fd.strict && fd.from.SubsetOf(cols) && !fd.to.SubsetOf(cols) {
+			cols.UnionWith(fd.to)
+
+			// Restart iteration to get transitive closure.
+			i = -1
+		}
+	}
+	return cols
+}
+
 // AddStrictKey adds a FD for a new key. The given key columns are reduced to a
 // candidate key, and that becomes the determinant for the allCols column set.
 // The resulting FD is strict, meaning that a NULL key value always maps to the

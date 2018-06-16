@@ -23,7 +23,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/sql/opt/testutils/testcat"
 )
 
-func TestCanProvideOrdering(t *testing.T) {
+func TestScanCanProvideOrdering(t *testing.T) {
 	cat := testcat.New()
 	_, err := cat.ExecuteDDL(
 		"CREATE TABLE a (" +
@@ -51,28 +51,36 @@ func TestCanProvideOrdering(t *testing.T) {
 	s := opt.OrderingColumn(md.TableColumn(a, 2))
 	f := opt.OrderingColumn(md.TableColumn(a, 3))
 
-	test := func(def *memo.ScanOpDef, ordering props.Ordering, expected bool) {
-		t.Helper()
-		if def.CanProvideOrdering(md, ordering) != expected {
-			t.Errorf("expected %v, got %v", expected, !expected)
-		}
+	testcases := []struct {
+		index    int
+		ordering opt.Ordering
+		expected bool
+	}{
+		// Ordering is longer than index.
+		{index: altIndex1, ordering: opt.Ordering{i, k, s}, expected: true},
+		{index: altIndex1, ordering: opt.Ordering{k, i, s}, expected: false},
+
+		// Index is longer than ordering.
+		{index: altIndex1, ordering: opt.Ordering{i}, expected: true},
+		{index: altIndex1, ordering: opt.Ordering{k}, expected: false},
+
+		// Index contains descending column.
+		{index: altIndex2, ordering: opt.Ordering{-s}, expected: true},
+		{index: altIndex2, ordering: opt.Ordering{s}, expected: false},
+
+		// Index contains storing column.
+		{index: altIndex2, ordering: opt.Ordering{-s, k, f}, expected: true},
+		{index: altIndex2, ordering: opt.Ordering{-s, k, i}, expected: false},
 	}
 
-	// Ordering is longer than index.
-	def := &memo.ScanOpDef{Table: a, Index: altIndex1}
-	test(def, props.Ordering{i, k, s}, true)
-	test(def, props.Ordering{k, i, s}, false)
+	for _, tc := range testcases {
+		var pattern props.OrderingChoice
+		pattern.InitFromOrdering(tc.ordering)
 
-	// Index is longer than ordering.
-	test(def, props.Ordering{i}, true)
-	test(def, props.Ordering{k}, false)
+		def := &memo.ScanOpDef{Table: a, Index: tc.index}
 
-	// Index contains descending column.
-	def = &memo.ScanOpDef{Table: a, Index: altIndex2}
-	test(def, props.Ordering{-s}, true)
-	test(def, props.Ordering{s}, false)
-
-	// Index contains storing column.
-	test(def, props.Ordering{-s, k, f}, true)
-	test(def, props.Ordering{-s, k, i}, false)
+		if def.CanProvideOrdering(md, &pattern) != tc.expected {
+			t.Errorf("expected %v, got %v", tc.expected, !tc.expected)
+		}
+	}
 }

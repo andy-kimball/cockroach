@@ -15,6 +15,9 @@
 package opt
 
 import (
+	"bytes"
+	"fmt"
+
 	"github.com/cockroachdb/cockroach/pkg/util"
 )
 
@@ -81,4 +84,39 @@ func ColListToSet(colList ColList) ColSet {
 		r.Add(int(col))
 	}
 	return r
+}
+
+type OrderingColSet = util.FastIntSet
+
+// Ordering defines the order of rows provided or required by an operator. A
+// negative value indicates descending order on the column id "-(value)".
+type Ordering []OrderingColumn
+
+func (o Ordering) String() string {
+	var buf bytes.Buffer
+	o.format(&buf)
+	return buf.String()
+}
+
+func (o Ordering) format(buf *bytes.Buffer) {
+	for i, col := range o {
+		if i > 0 {
+			buf.WriteString(",")
+		}
+		if col.Descending() {
+			buf.WriteByte('-')
+		} else {
+			buf.WriteByte('+')
+		}
+		fmt.Fprintf(buf, "%d", col.ID())
+	}
+}
+
+// ColSet returns the set of column IDs used in the ordering.
+func (o Ordering) ColSet() ColSet {
+	var colSet ColSet
+	for _, col := range o {
+		colSet.Add(int(col.ID()))
+	}
+	return colSet
 }

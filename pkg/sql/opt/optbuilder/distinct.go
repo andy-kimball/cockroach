@@ -16,6 +16,7 @@ package optbuilder
 
 import (
 	"github.com/cockroachdb/cockroach/pkg/sql/opt"
+	"github.com/cockroachdb/cockroach/pkg/sql/opt/props"
 	"github.com/cockroachdb/cockroach/pkg/sql/pgwire/pgerror"
 	"github.com/cockroachdb/cockroach/pkg/sql/sem/tree"
 )
@@ -55,8 +56,9 @@ func (b *Builder) buildDistinct(
 	//   SELECT DISTINCT a FROM t ORDER BY b
 	// TODO(rytaft): This is not valid syntax in Postgres, but it works in
 	// CockroachDB, so we may need to support it eventually.
-	for _, col := range outScope.physicalProps.Ordering {
-		if !outScope.hasColumn(col.ID()) {
+	iter := props.OrderingIterator{Choices: &outScope.physicalProps.Ordering}
+	for iter.Next() {
+		if !outScope.hasColumn(iter.Col().ID()) {
 			panic(builderError{pgerror.NewErrorf(
 				pgerror.CodeInvalidColumnReferenceError,
 				"for SELECT DISTINCT, ORDER BY expressions must appear in select list",

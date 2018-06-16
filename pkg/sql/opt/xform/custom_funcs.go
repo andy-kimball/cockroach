@@ -284,8 +284,9 @@ func (c *CustomFuncs) CanLimitScan(def, limit, ordering memo.PrivateID) bool {
 		return false
 	}
 
-	required := c.e.mem.LookupPrivate(ordering).(props.Ordering)
-	return scanOpDef.CanProvideOrdering(c.e.mem.Metadata(), required)
+	var required props.OrderingChoice
+	required.InitFromOrdering(c.e.mem.LookupPrivate(ordering).(opt.Ordering))
+	return scanOpDef.CanProvideOrdering(c.e.mem.Metadata(), &required)
 }
 
 // LimitScanDef constructs a new ScanOpDef private value that is based on the

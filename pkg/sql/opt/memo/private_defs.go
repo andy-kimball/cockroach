@@ -97,7 +97,7 @@ type ScanOpDef struct {
 
 // CanProvideOrdering returns true if the scan operator returns rows that
 // satisfy the given required ordering.
-func (s *ScanOpDef) CanProvideOrdering(md *opt.Metadata, required props.Ordering) bool {
+func (s *ScanOpDef) CanProvideOrdering(md *opt.Metadata, required *props.OrderingChoice) bool {
 	// Scan naturally orders according to the order of the scanned index.
 	index := md.Table(s.Table).Index(s.Index)
 
@@ -112,15 +112,16 @@ func (s *ScanOpDef) CanProvideOrdering(md *opt.Metadata, required props.Ordering
 	if s.Index == opt.PrimaryIndex {
 		cnt = index.UniqueColumnCount()
 	}
-	if len(required) < cnt {
-		cnt = len(required)
+	if required.ColCount() < cnt {
+		cnt = required.ColCount()
 	}
 
+	matcher := props.OrderingIterator{Choices: required}
 	for i := 0; i < cnt; i++ {
 		indexCol := index.Column(i)
 		colID := md.TableColumn(s.Table, indexCol.Ordinal)
 		orderingCol := opt.MakeOrderingColumn(colID, indexCol.Descending)
-		if orderingCol != required[i] {
+		if !matcher.Next() || !matcher.Matches(orderingCol) {
 			return false
 		}
 	}
@@ -131,7 +132,7 @@ func (s *ScanOpDef) CanProvideOrdering(md *opt.Metadata, required props.Ordering
 // operator.
 type GroupByDef struct {
 	GroupingCols opt.ColSet
-	Ordering     props.Ordering
+	Ordering     opt.Ordering
 }
 
 // LookupJoinDef defines the value of the Def private field of the LookupJoin
@@ -220,7 +221,7 @@ type ShowTraceOpDef struct {
 // operator.
 type RowNumberDef struct {
 	// Ordering denotes the required ordering of the input.
-	Ordering props.Ordering
+	Ordering opt.Ordering
 
 	// ColID holds the id of the column introduced by this operator.
 	ColID opt.ColumnID
@@ -228,7 +229,7 @@ type RowNumberDef struct {
 
 // CanProvideOrdering returns true if the row number operator returns rows that
 // can satisfy the given required ordering.
-func (w *RowNumberDef) CanProvideOrdering(required props.Ordering) bool {
+func (w *RowNumberDef) CanProvideOrdering(required *props.OrderingChoice) bool {
 	// RowNumber can provide the same ordering it requires from its input.
 
 	// By construction, the ordinality is a key, and the output is always ordered
@@ -238,11 +239,12 @@ func (w *RowNumberDef) CanProvideOrdering(required props.Ordering) bool {
 	// are checking if an ordering can be satisfied in this way, we can return
 	// true early if the set of columns we have iterated over are a key.
 	ordCol := opt.MakeOrderingColumn(w.ColID, false)
-	for i, col := range required {
-		if col == ordCol {
+	it := props.OrderingIterator{Choices: required}
+	for i := 0; it.Next(); i++ {
+		if it.Matches(ordCol) {
 			return true
 		}
-		if i >= len(w.Ordering) || col != w.Ordering[i] {
+		if i >= len(w.Ordering) || !it.Matches(w.Ordering[i]) {
 			return false
 		}
 	}

@@ -221,20 +221,25 @@ func (*Builder) getColumns(
 	return needed, output
 }
 
-func (b *Builder) makeSQLOrdering(res execPlan, ev memo.ExprView) sqlbase.ColumnOrdering {
-	var reqOrder sqlbase.ColumnOrdering
-	if reqProps := ev.Physical(); len(reqProps.Ordering) > 0 {
-		reqOrder = make(sqlbase.ColumnOrdering, len(reqProps.Ordering))
-		for i := range reqOrder {
-			reqOrder[i].ColIdx = int(res.getColumnOrdinal(reqProps.Ordering[i].ID()))
-			if reqProps.Ordering[i].Ascending() {
-				reqOrder[i].Direction = encoding.Ascending
-			} else {
-				reqOrder[i].Direction = encoding.Descending
-			}
-		}
+func (b *Builder) makeSQLOrdering(
+	plan execPlan, ordering *props.OrderingChoice,
+) sqlbase.ColumnOrdering {
+	if !ordering.Defined() {
+		return nil
 	}
 
+	reqOrder := make(sqlbase.ColumnOrdering, 0, ordering.ColCount())
+	iter := props.OrderingIterator{Choices: ordering}
+	for iter.Next() {
+		var orderInfo sqlbase.ColumnOrderInfo
+		orderInfo.ColIdx = int(plan.getColumnOrdinal(iter.Col().ID()))
+		if iter.Col().Ascending() {
+			orderInfo.Direction = encoding.Ascending
+		} else {
+			orderInfo.Direction = encoding.Descending
+		}
+		reqOrder = append(reqOrder, orderInfo)
+	}
 	return reqOrder
 }
 
@@ -246,7 +251,7 @@ func (b *Builder) buildScan(ev memo.ExprView) (execPlan, error) {
 	needed, output := b.getColumns(md, def.Cols, def.Table)
 	res := execPlan{outputCols: output}
 
-	reqOrder := b.makeSQLOrdering(res, ev)
+	reqOrder := b.makeSQLOrdering(res, &ev.Physical().Ordering)
 
 	root, err := b.factory.ConstructScan(
 		tab,
@@ -520,7 +525,7 @@ func (b *Builder) buildSort(ev memo.ExprView) (execPlan, error) {
 	if err != nil {
 		return execPlan{}, err
 	}
-	return b.buildSortedInput(input, ev.Physical().Ordering)
+	return b.buildSortedInput(input, &ev.Physical().Ordering)
 }
 
 func (b *Builder) buildRowNumber(ev memo.ExprView) (execPlan, error) {
@@ -552,7 +557,7 @@ func (b *Builder) buildLookupJoin(ev memo.ExprView) (execPlan, error) {
 	// TODO(radu): Remove this code once we have support for a more general
 	// lookup join operator.
 	var limit tree.TypedExpr
-	var ordering props.Ordering
+	var ordering *props.OrderingChoice
 	child := ev.Child(0)
 	if child.Operator() == opt.LimitOp {
 		limit, err = b.buildScalar(nil, child.Child(1))
@@ -562,7 +567,7 @@ func (b *Builder) buildLookupJoin(ev memo.ExprView) (execPlan, error) {
 		child = child.Child(0)
 	}
 	if child.Operator() == opt.SortOp {
-		ordering = child.Physical().Ordering
+		ordering = &child.Physical().Ordering
 		child = child.Child(0)
 	}
 
@@ -583,7 +588,7 @@ func (b *Builder) buildLookupJoin(ev memo.ExprView) (execPlan, error) {
 	// be in the needed set, so no need to add anything further to that.
 	var reqOrder sqlbase.ColumnOrdering
 	if ordering == nil {
-		reqOrder = b.makeSQLOrdering(res, ev)
+		reqOrder = b.makeSQLOrdering(res, &ev.Physical().Ordering)
 	}
 
 	res.root, err = b.factory.ConstructIndexJoin(input.root, md.Table(def.Table), needed, reqOrder)
@@ -734,17 +739,10 @@ func (b *Builder) buildShowTrace(ev memo.ExprView) (execPlan, error) {
 
 // buildSortedInput is a helper method that can be reused to sort any input plan
 // by the given ordering.
-func (b *Builder) buildSortedInput(input execPlan, ordering props.Ordering) (execPlan, error) {
-	colOrd := make(sqlbase.ColumnOrdering, len(ordering))
-	for i, col := range ordering {
-		ord := input.getColumnOrdinal(col.ID())
-		colOrd[i].ColIdx = int(ord)
-		if col.Descending() {
-			colOrd[i].Direction = encoding.Descending
-		} else {
-			colOrd[i].Direction = encoding.Ascending
-		}
-	}
+func (b *Builder) buildSortedInput(
+	input execPlan, ordering *props.OrderingChoice,
+) (execPlan, error) {
+	colOrd := b.makeSQLOrdering(input, ordering)
 	node, err := b.factory.ConstructSort(input.root, colOrd)
 	if err != nil {
 		return execPlan{}, err

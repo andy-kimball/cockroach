@@ -47,7 +47,7 @@ type Physical struct {
 	// one or more columns, each of which can be sorted in either ascending or
 	// descending order. If Ordering is not defined, then no particular ordering
 	// is required or provided.
-	Ordering Ordering
+	Ordering OrderingChoice
 }
 
 // Defined returns true if any physical property is defined. If none is
@@ -109,7 +109,7 @@ func (p *Physical) String() string {
 
 // Equals returns true if the two physical properties are identical.
 func (p *Physical) Equals(rhs *Physical) bool {
-	return p.Presentation.Equals(rhs.Presentation) && p.Ordering.Equals(rhs.Ordering)
+	return p.Presentation.Equals(rhs.Presentation) && p.Ordering.Equals(&rhs.Ordering)
 }
 
 // Presentation specifies the naming, membership (including duplicates), and
@@ -153,70 +153,4 @@ func (p Presentation) format(buf *bytes.Buffer) {
 		}
 		fmt.Fprintf(buf, "%s:%d", col.Label, col.ID)
 	}
-}
-
-// Ordering defines the order of rows provided or required by an operator. A
-// negative value indicates descending order on the column id "-(value)".
-type Ordering []opt.OrderingColumn
-
-// Defined is true if a particular row ordering is required or provided.
-func (o Ordering) Defined() bool {
-	return len(o) != 0
-}
-
-func (o Ordering) String() string {
-	var buf bytes.Buffer
-	o.format(&buf)
-	return buf.String()
-}
-
-func (o Ordering) format(buf *bytes.Buffer) {
-	for i, col := range o {
-		if i > 0 {
-			buf.WriteString(",")
-		}
-		if col.Descending() {
-			buf.WriteByte('-')
-		} else {
-			buf.WriteByte('+')
-		}
-		fmt.Fprintf(buf, "%d", col.ID())
-	}
-}
-
-// ColSet returns the set of column IDs used in the ordering.
-func (o Ordering) ColSet() opt.ColSet {
-	var colSet opt.ColSet
-	for _, col := range o {
-		colSet.Add(int(col.ID()))
-	}
-	return colSet
-}
-
-// Provides returns true if the required ordering is a prefix of this ordering.
-func (o Ordering) Provides(required Ordering) bool {
-	if len(o) < len(required) {
-		return false
-	}
-
-	for i := range required {
-		if o[i] != required[i] {
-			return false
-		}
-	}
-	return true
-}
-
-// Equals returns true if the two orderings are identical.
-func (o Ordering) Equals(rhs Ordering) bool {
-	if len(o) != len(rhs) {
-		return false
-	}
-
-	for i := range o {
-		if o[i] != rhs[i] {
-			return false
-		}
-	}
-	return true
 }
