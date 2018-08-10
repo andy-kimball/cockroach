@@ -330,6 +330,16 @@ func (c *CustomFuncs) NonKeyCols(group memo.GroupID) opt.ColSet {
 	return c.OutputCols(group).Difference(keyCols)
 }
 
+func (c *CustomFuncs) MinNotNullCol(group memo.GroupID) opt.ColSet {
+	var colSet opt.ColSet
+	col, ok := c.LookupLogical(group).Relational.NotNullCols.Next(0)
+	if !ok {
+		panic("expected group to have at least one not null column")
+	}
+	colSet.Add(col)
+	return colSet
+}
+
 // MakeAggCols constructs a new Aggregations operator containing an aggregate
 // function of the given operator type for each of column in the given set. For
 // example, for ConstAggOp and columns (1,2), this expression is returned:
@@ -372,8 +382,12 @@ func (c *CustomFuncs) MakeAggCols2(
 // EnsureNotNullIfNeeded searches for a not-null output column in the given
 // group. If such a column does not exist, it checks whether an aggregation
 // which cannot ignore nulls exists.  If so, it synthesizes a new True constant
-// column that is not-null. EnsureNotNullIfNeeded returns the input group,
-// possibly wrapped in a new Project if a new column was synthesized.
+// column that is not-null. This becomes a kind of "canary" column that other
+// expressions can inspect, since any null value in this column indicates that
+// the row was added by an outer join as part of null extending.
+//
+// EnsureNotNullIfNeeded returns the input group, possibly wrapped in a new
+// Project if a new column was synthesized.
 //
 // See the TryDecorrelateScalarGroupBy rule comment for more details.
 func (c *CustomFuncs) EnsureNotNullIfNeeded(in, aggs memo.GroupID) memo.GroupID {
@@ -415,7 +429,8 @@ func (c *CustomFuncs) referencedCols(scalarExpr memo.GroupID) opt.ColSet {
 //
 //   * It is CountRows (because it will be translated into Count),
 //   * It ignores nulls (because nothing extra must be done for it)
-//   * It gives NULL on no input (because this is how we translate non-null ignoring aggregates)
+//   * It gives NULL on no input (because this is how we translate non-null
+//     ignoring aggregates)
 //
 // TODO(justin): we can lift the third condition if we have a function that
 // gives the correct "on empty" value for a given aggregate.
@@ -572,11 +587,10 @@ func (c *CustomFuncs) aggsRequiringTranslation(aggregations, leftInput memo.Grou
 	return result
 }
 
-// TranslateNonIgnoreAggs checks if any of the aggregates being decorrelated
 // are unable to ignore nulls. If that is the case, it inserts projections
 // which check a "canary" aggregation that determines if a group actually had
 // any things grouped into it or not.
-func (c *CustomFuncs) TranslateNonIgnoreAggs(
+func (c *CustomFuncs) TranslateNonIgnoreAggs2(
 	in memo.GroupID,
 	originalAggs memo.GroupID,
 	newAggs memo.GroupID,
@@ -639,25 +653,71 @@ func (c *CustomFuncs) TranslateNonIgnoreAggs(
 	return c.f.ConstructProject(in, pb.buildProjections())
 }
 
-// EnsureAggsIgnoreNulls scans the aggregate list to aggregation functions that
+// TranslateNonIgnoreAggs checks if any of the aggregates being decorrelated
+// are unable to ignore nulls. If that is the case, it inserts projections
+// which check a "canary" aggregation that determines if a group actually had
+// any things grouped into it or not.
+func (c *CustomFuncs) TranslateNonIgnoreAggs(
+	newIn, newAggs, oldIn, oldAggs memo.GroupID, outCols opt.ColSet,
+) memo.GroupID {
+	aggsExpr := c.f.mem.NormExpr(newAggs).AsAggregations()
+	aggsElems := c.f.mem.LookupList(aggsExpr.Aggs())
+	aggCols := c.ExtractColList(aggsExpr.Cols())
+	oldAggCols := c.ExtractColList(c.f.mem.NormExpr(oldAggs).AsAggregations().Cols())
+
+	var aggCanaryVar memo.GroupID
+	pb := projectionsBuilder{f: c.f}
+
+	var synthCols opt.ColSet
+	for i, elem := range aggsElems {
+		expr := c.f.mem.NormExpr(elem)
+		if !opt.AggregateIgnoresNulls(expr.Operator()) {
+			if aggCanaryVar == 0 {
+				canaryAggID, ok := c.LookupLogical(oldIn).Relational.NotNullCols.Next(0)
+				if !ok {
+					panic("expected input expression to have not-null column")
+				}
+				aggCanaryVar = c.f.ConstructVariable(c.f.InternColumnID(opt.ColumnID(canaryAggID)))
+			}
+
+			pb.addSynthesized(
+				c.constructCanaryChecker(aggCanaryVar, aggCols[i]),
+				oldAggCols[i],
+			)
+			synthCols.Add(int(oldAggCols[i]))
+		}
+	}
+
+	if synthCols.Empty() {
+		return newIn
+	}
+	pb.addPassthroughCols(outCols.Difference(synthCols))
+	return c.f.ConstructProject(newIn, pb.buildProjections())
+}
+
+// EnsureAggsCanIgnoreNulls scans the aggregate list to aggregation functions that
 // don't ignore nulls but can be remapped so that they do:
 //   - CountRows functions are are converted to Count functions that operate
 //     over a not-null column from the given input group. The
 //     EnsureNotNullIfNeeded method should already have been called in order
 //     to guarantee such a column exists.
 //   - ConstAgg is remapped to ConstNotNullAgg.
+//   - Other aggregates that can use a canary column to detect nulls.
 //
 // CanAggsIgnoreNulls should already have been called in order to guarantee that
 // remapping is possible.
 //
 // See the TryDecorrelateScalarGroupBy rule comment for more details.
-func (c *CustomFuncs) EnsureAggsIgnoreNulls(in, aggs memo.GroupID) memo.GroupID {
+func (c *CustomFuncs) EnsureAggsCanIgnoreNulls(in, aggs memo.GroupID) memo.GroupID {
 	aggsExpr := c.f.mem.NormExpr(aggs).AsAggregations()
 	aggsElems := c.f.mem.LookupList(aggsExpr.Aggs())
+	aggsCols := c.ExtractColList(aggsExpr.Cols())
 
 	var outElems []memo.GroupID
+	var outCols opt.ColList
 	for i, elem := range aggsElems {
 		newElem := elem
+		newCol := aggsCols[i]
 		expr := c.f.mem.NormExpr(elem)
 		switch expr.Operator() {
 		case opt.ConstAggOp:
@@ -672,21 +732,70 @@ func (c *CustomFuncs) EnsureAggsIgnoreNulls(in, aggs memo.GroupID) memo.GroupID 
 			}
 			notNullColID := c.f.InternColumnID(opt.ColumnID(id))
 			newElem = c.f.ConstructCount(c.f.ConstructVariable(notNullColID))
+
+		default:
+			if !opt.AggregateIgnoresNulls(expr.Operator()) {
+				// Allocate id for new intermediate agg column. The column will get
+				// mapped back to the original id after the grouping (by the
+				// TranslateNonIgnoreAggs method).
+				md := c.f.Metadata()
+				label := md.ColumnLabel(newCol)
+				newCol = md.AddColumn(label, md.ColumnType(newCol))
+			}
 		}
-		if newElem != elem && outElems == nil {
-			outElems = make([]memo.GroupID, len(aggsElems))
-			copy(outElems, aggsElems[:i])
+		if outElems == nil {
+			if newElem != elem || newCol != aggsCols[i] {
+				outElems = make([]memo.GroupID, len(aggsElems))
+				copy(outElems, aggsElems[:i])
+				outCols = make(opt.ColList, len(aggsElems))
+				copy(outCols, aggsCols[:i])
+			}
 		}
 		if outElems != nil {
 			outElems[i] = newElem
+			outCols[i] = newCol
 		}
 	}
 	if outElems == nil {
 		// No changes.
 		return aggs
 	}
+	return c.f.ConstructAggregations(c.f.InternList(outElems), c.f.InternColList(outCols))
+}
 
-	return c.f.ConstructAggregations(c.f.InternList(outElems), aggsExpr.Cols())
+func (c *CustomFuncs) EnsureCanaryAgg(in, aggs memo.GroupID) opt.ColSet {
+	aggsExpr := c.f.mem.NormExpr(aggs).AsAggregations()
+	aggsElems := c.f.mem.LookupList(aggsExpr.Aggs())
+	aggsCols := c.ExtractColList(aggsExpr.Cols())
+
+	var canaryCols opt.ColSet
+	id, ok := c.LookupLogical(in).Relational.NotNullCols.Next(0)
+	if !ok {
+		// No not null columns, so none of the aggs must have needed them (see
+		// EnsureNotNullIfNeeded for more details).
+		return canaryCols
+	}
+
+	needCanary := false
+	for i, elem := range aggsElems {
+		expr := c.f.mem.NormExpr(elem)
+		if aggsCols[i] == opt.ColumnID(id) {
+			// An aggregate already exists that can be used as a canary column.
+			// This is most likely a ConstNotNull column that wraps a reference
+			// to the not null column from the input.
+			needCanary = false
+			break
+		}
+
+		if !opt.AggregateIgnoresNulls(expr.Operator()) {
+			needCanary = true
+		}
+	}
+
+	if needCanary {
+		canaryCols.Add(id)
+	}
+	return canaryCols
 }
 
 // MakeGroupByDef constructs a new unordered GroupByDef using the given grouping
@@ -708,13 +817,8 @@ func (c *CustomFuncs) MakeOrderedGroupByDef(
 	})
 }
 
-// GroupByKeyWithOrdering constructs a new GroupByDef using the candidate key
-// columns from the given input group as the grouping columns.
-func (c *CustomFuncs) GroupByKeyWithOrdering(groupingCols opt.ColSet, def memo.PrivateID) memo.PrivateID {
-	return c.f.InternGroupByDef(&memo.GroupByDef{
-		GroupingCols: groupingCols,
-		Ordering:     c.f.mem.LookupPrivate(def).(*memo.GroupByDef).Ordering,
-	})
+func (c *CustomFuncs) ExtractGroupByOrdering(def memo.PrivateID) *props.OrderingChoice {
+	return &c.f.mem.LookupPrivate(def).(*memo.GroupByDef).Ordering
 }
 
 // AddColsToGroupByDef returns a new GroupByDef that is a copy of the given
