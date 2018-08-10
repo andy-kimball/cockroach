@@ -1528,7 +1528,7 @@ group-by
  │    │    ├── key: (1,6)
  │    │    ├── fd: (1)-->(2-5), (1,6)-->(2-5,11)
  │    │    ├── left-join
- │    │    │    ├── columns: k:1(int!null) i:2(int) f:3(float) s:4(string) j:5(jsonb) x:6(int!null) notnull:12(bool)
+ │    │    │    ├── columns: k:1(int!null) i:2(int) f:3(float) s:4(string) j:5(jsonb) x:6(int!null) canary:12(bool)
  │    │    │    ├── fd: (1)-->(2-5), ()~~>(12)
  │    │    │    ├── inner-join
  │    │    │    │    ├── columns: k:1(int!null) i:2(int) f:3(float) s:4(string) j:5(jsonb) x:6(int!null)
@@ -1543,7 +1543,7 @@ group-by
  │    │    │    │    │    └── key: (6)
  │    │    │    │    └── true [type=bool]
  │    │    │    ├── project
- │    │    │    │    ├── columns: notnull:12(bool!null)
+ │    │    │    │    ├── columns: canary:12(bool!null)
  │    │    │    │    ├── fd: ()-->(12)
  │    │    │    │    ├── scan uv
  │    │    │    │    └── projections
@@ -1552,7 +1552,7 @@ group-by
  │    │    │         └── a.i = 5 [type=bool, outer=(2), constraints=(/2: [/5 - /5]; tight)]
  │    │    └── aggregations [outer=(2-5,12)]
  │    │         ├── count [type=int, outer=(12)]
- │    │         │    └── variable: notnull [type=bool, outer=(12)]
+ │    │         │    └── variable: canary [type=bool, outer=(12)]
  │    │         ├── const-agg [type=int, outer=(2)]
  │    │         │    └── variable: a.i [type=int, outer=(2)]
  │    │         ├── const-agg [type=float, outer=(3)]
@@ -1661,19 +1661,19 @@ project
  ├── key: (1)
  ├── fd: (1)-->(9)
  ├── group-by
- │    ├── columns: k:1(int!null) notnull:10(bool) array_agg:11(int[])
+ │    ├── columns: k:1(int!null) canary:10(bool) array_agg:11(int[])
  │    ├── grouping columns: k:1(int!null)
  │    ├── key: (1)
  │    ├── fd: ()~~>(10), (1)-->(10,11)
  │    ├── left-join
- │    │    ├── columns: k:1(int!null) i:2(int) y:7(int) notnull:10(bool)
+ │    │    ├── columns: k:1(int!null) i:2(int) y:7(int) canary:10(bool)
  │    │    ├── fd: (1)-->(2), ()~~>(10)
  │    │    ├── scan a
  │    │    │    ├── columns: k:1(int!null) i:2(int)
  │    │    │    ├── key: (1)
  │    │    │    └── fd: (1)-->(2)
  │    │    ├── project
- │    │    │    ├── columns: notnull:10(bool!null) y:7(int)
+ │    │    │    ├── columns: canary:10(bool!null) y:7(int)
  │    │    │    ├── fd: ()-->(10)
  │    │    │    ├── scan xy
  │    │    │    │    └── columns: y:7(int)
@@ -1685,9 +1685,9 @@ project
  │         ├── array-agg [type=int[], outer=(7)]
  │         │    └── variable: xy.y [type=int, outer=(7)]
  │         └── const-not-null-agg [type=bool, outer=(10)]
- │              └── variable: notnull [type=bool, outer=(10)]
+ │              └── variable: canary [type=bool, outer=(10)]
  └── projections [outer=(1,10,11)]
-      └── COALESCE(CASE WHEN notnull IS NOT NULL THEN array_agg END, ARRAY[]) [type=int[], outer=(10,11)]
+      └── COALESCE(CASE WHEN canary IS NOT NULL THEN array_agg END, ARRAY[]) [type=int[], outer=(10,11)]
 
 # With an ordering.
 norm
@@ -1696,24 +1696,24 @@ SELECT i, ARRAY(SELECT y FROM xy WHERE xy.y = a.k OR xy.y = NULL ORDER BY y) FRO
 project
  ├── columns: i:2(int) array:9(tuple{int}[])
  ├── group-by
- │    ├── columns: k:1(int!null) i:2(int) notnull:10(bool) array_agg:11(int[])
+ │    ├── columns: k:1(int!null) i:2(int) canary:10(bool) array_agg:11(int[])
  │    ├── grouping columns: k:1(int!null)
  │    ├── internal-ordering: +7
  │    ├── key: (1)
  │    ├── fd: (1)-->(2,10,11), ()~~>(10)
  │    ├── sort
- │    │    ├── columns: k:1(int!null) i:2(int) y:7(int) notnull:10(bool)
+ │    │    ├── columns: k:1(int!null) i:2(int) y:7(int) canary:10(bool)
  │    │    ├── fd: (1)-->(2), ()~~>(10)
  │    │    ├── ordering: +7
  │    │    └── left-join
- │    │         ├── columns: k:1(int!null) i:2(int) y:7(int) notnull:10(bool)
+ │    │         ├── columns: k:1(int!null) i:2(int) y:7(int) canary:10(bool)
  │    │         ├── fd: (1)-->(2), ()~~>(10)
  │    │         ├── scan a
  │    │         │    ├── columns: k:1(int!null) i:2(int)
  │    │         │    ├── key: (1)
  │    │         │    └── fd: (1)-->(2)
  │    │         ├── project
- │    │         │    ├── columns: notnull:10(bool!null) y:7(int)
+ │    │         │    ├── columns: canary:10(bool!null) y:7(int)
  │    │         │    ├── fd: ()-->(10)
  │    │         │    ├── scan xy
  │    │         │    │    └── columns: y:7(int)
@@ -1727,9 +1727,9 @@ project
  │         ├── const-agg [type=int, outer=(2)]
  │         │    └── variable: a.i [type=int, outer=(2)]
  │         └── const-not-null-agg [type=bool, outer=(10)]
- │              └── variable: notnull [type=bool, outer=(10)]
+ │              └── variable: canary [type=bool, outer=(10)]
  └── projections [outer=(2,10,11)]
-      └── COALESCE(CASE WHEN notnull IS NOT NULL THEN array_agg END, ARRAY[]) [type=int[], outer=(10,11)]
+      └── COALESCE(CASE WHEN canary IS NOT NULL THEN array_agg END, ARRAY[]) [type=int[], outer=(10,11)]
 
 # Nest scalar decorrelation within scalar decorrelation, using IS NULL to force
 # use of left joins.

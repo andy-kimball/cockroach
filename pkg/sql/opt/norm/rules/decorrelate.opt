@@ -380,23 +380,26 @@
         (GroupBy
             (LeftJoinApply
                 $leftWithKey:(EnsureKey $left)
-                $rightWithNotNull:(EnsureNotNullIfNeeded $input $aggregations)
+                $rightWithCanary:(EnsureCanary
+                    $input
+                    $canaryCol:(EnsureCanaryCol $input $aggregations)
+                )
                 (True)
             )
             (AppendAggCols2
                 $translatedAggs:(EnsureAggsCanIgnoreNulls
-                    $rightWithNotNull
+                    $rightWithCanary
                     $aggregations
                 )
                 ConstAgg (NonKeyCols $leftWithKey)
-                ConstNotNullAgg (EnsureCanaryAgg $rightWithNotNull $aggregations)
+                ConstNotNullAgg (CanaryColSet $canaryCol)
             )
             (MakeOrderedGroupByDef (KeyCols $leftWithKey) (ExtractGroupByOrdering $def))
         )
         $translatedAggs
-        $rightWithNotNull
+        $rightWithCanary
         $aggregations
-        (OutputCols2 $left $right)
+        $canaryCol
     )
     $on
 )

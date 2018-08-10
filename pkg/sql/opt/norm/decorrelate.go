@@ -390,23 +390,40 @@ func (c *CustomFuncs) MakeAggCols2(
 // Project if a new column was synthesized.
 //
 // See the TryDecorrelateScalarGroupBy rule comment for more details.
-func (c *CustomFuncs) EnsureNotNullIfNeeded(in, aggs memo.GroupID) memo.GroupID {
-	_, ok := c.LookupLogical(in).Relational.NotNullCols.Next(0)
-	if ok {
-		return in
-	}
-
+func (c *CustomFuncs) EnsureCanaryCol(in, aggs memo.GroupID) opt.ColumnID {
 	aggsExpr := c.f.mem.NormExpr(aggs).AsAggregations()
 	aggsElems := c.f.mem.LookupList(aggsExpr.Aggs())
 
 	for _, elem := range aggsElems {
 		if !opt.AggregateIgnoresNulls(c.f.mem.NormExpr(elem).Operator()) {
-			notNullColID := c.f.Metadata().AddColumn("notnull", types.Bool)
-			result := c.f.projectExtraCol(in, c.f.ConstructTrue(), notNullColID)
-			return result
+			// Look for an existing not null column that is not projected by a
+			// passthrough aggregate like ConstAgg.
+			id, ok := c.LookupLogical(in).Relational.NotNullCols.Next(0)
+			if ok && !c.OutputCols(aggs).Contains(id) {
+				return opt.ColumnID(id)
+			}
+
+			// Synthesize a new column ID.
+			return c.f.Metadata().AddColumn("canary", types.Bool)
 		}
 	}
-	return in
+	return 0
+}
+
+func (c *CustomFuncs) EnsureCanary(in memo.GroupID, canaryCol opt.ColumnID) memo.GroupID {
+	if canaryCol == 0 || c.OutputCols(in).Contains(int(canaryCol)) {
+		return in
+	}
+	result := c.f.projectExtraCol(in, c.f.ConstructTrue(), canaryCol)
+	return result
+}
+
+func (c *CustomFuncs) CanaryColSet(canaryCol opt.ColumnID) opt.ColSet {
+	var colSet opt.ColSet
+	if canaryCol != 0 {
+		colSet.Add(int(canaryCol))
+	}
+	return colSet
 }
 
 func (c *CustomFuncs) referencedCols(scalarExpr memo.GroupID) opt.ColSet {
@@ -658,7 +675,7 @@ func (c *CustomFuncs) TranslateNonIgnoreAggs2(
 // which check a "canary" aggregation that determines if a group actually had
 // any things grouped into it or not.
 func (c *CustomFuncs) TranslateNonIgnoreAggs(
-	newIn, newAggs, oldIn, oldAggs memo.GroupID, outCols opt.ColSet,
+	newIn, newAggs, oldIn, oldAggs memo.GroupID, canaryCol opt.ColumnID,
 ) memo.GroupID {
 	aggsExpr := c.f.mem.NormExpr(newAggs).AsAggregations()
 	aggsElems := c.f.mem.LookupList(aggsExpr.Aggs())
@@ -667,31 +684,35 @@ func (c *CustomFuncs) TranslateNonIgnoreAggs(
 
 	var aggCanaryVar memo.GroupID
 	pb := projectionsBuilder{f: c.f}
+	passthroughCols := c.OutputCols(newIn)
+	passthroughCols.Remove(int(canaryCol))
 
-	var synthCols opt.ColSet
 	for i, elem := range aggsElems {
 		expr := c.f.mem.NormExpr(elem)
 		if !opt.AggregateIgnoresNulls(expr.Operator()) {
 			if aggCanaryVar == 0 {
-				canaryAggID, ok := c.LookupLogical(oldIn).Relational.NotNullCols.Next(0)
-				if !ok {
-					panic("expected input expression to have not-null column")
+				if canaryCol == 0 {
+					id, ok := c.LookupLogical(oldIn).Relational.NotNullCols.Next(0)
+					if !ok {
+						panic("expected input expression to have not-null column")
+					}
+					canaryCol = opt.ColumnID(id)
 				}
-				aggCanaryVar = c.f.ConstructVariable(c.f.InternColumnID(opt.ColumnID(canaryAggID)))
+				aggCanaryVar = c.f.ConstructVariable(c.f.InternColumnID(canaryCol))
 			}
 
 			pb.addSynthesized(
 				c.constructCanaryChecker(aggCanaryVar, aggCols[i]),
 				oldAggCols[i],
 			)
-			synthCols.Add(int(oldAggCols[i]))
+			passthroughCols.Remove(int(aggCols[i]))
 		}
 	}
 
-	if synthCols.Empty() {
+	if len(pb.synthesizedCols) == 0 {
 		return newIn
 	}
-	pb.addPassthroughCols(outCols.Difference(synthCols))
+	pb.addPassthroughCols(passthroughCols)
 	return c.f.ConstructProject(newIn, pb.buildProjections())
 }
 
