@@ -187,7 +187,7 @@ func (b *Builder) buildScalarHelper(
 		// an empty array, while ARRAY_AGG with no inputs returns NULL.
 
 		s := t.Subquery.(*subquery)
-		aggInputColID := s.cols[0].id
+		aggInputColID := s.cols.first.id
 
 		elemType := b.factory.Metadata().ColumnType(aggInputColID)
 		if err := checkArrayElementType(elemType); err != nil {
@@ -335,11 +335,12 @@ func (b *Builder) buildScalarHelper(
 		return b.buildFunction(t, label, inScope, outScope)
 
 	case *tree.IndexedVar:
-		if t.Idx < 0 || t.Idx >= len(inScope.cols) {
+		col := inScope.cols.ith(t.Idx)
+		if col == nil {
 			panic(builderError{pgerror.NewErrorf(pgerror.CodeUndefinedColumnError,
 				"invalid column ordinal: @%d", t.Idx+1)})
 		}
-		out = b.factory.ConstructVariable(b.factory.InternColumnID(inScope.cols[t.Idx].id))
+		out = b.factory.ConstructVariable(b.factory.InternColumnID(col.id))
 
 	case *tree.NotExpr:
 		out = b.factory.ConstructNot(b.buildScalarHelper(t.TypedInnerExpr(), "", inScope, nil))
@@ -373,12 +374,13 @@ func (b *Builder) buildScalarHelper(
 		out = b.buildRangeCond(t.Not, t.Symmetric, input, from, to)
 
 	case *srf:
-		if len(t.cols) == 1 {
-			return b.finishBuildScalarRef(&t.cols[0], label, inScope, outScope)
+		cnt := t.cols.count()
+		if cnt == 1 {
+			return b.finishBuildScalarRef(t.cols.first, label, inScope, outScope)
 		}
-		list := make([]memo.GroupID, len(t.cols))
-		for i := range t.cols {
-			list[i] = b.buildScalarHelper(&t.cols[i], "", inScope, nil)
+		list := make([]memo.GroupID, cnt)
+		for i, col := 0, t.cols.first; col != nil; i, col = i+1, col.next {
+			list[i] = b.buildScalarHelper(col, "", inScope, nil)
 		}
 		out = b.factory.ConstructTuple(b.factory.InternList(list), b.factory.InternType(t.ResolvedType()))
 
@@ -487,9 +489,10 @@ func (b *Builder) buildFunction(
 		Overload:   f.ResolvedOverload(),
 	}
 
-	if isAggregate(def) {
-		return b.buildAggregateFunction(f, funcDef, label, inScope, outScope)
-	}
+	// TODO(andyk):
+	//if isAggregate(def) {
+	//	return b.buildAggregateFunction(f, funcDef, label, inScope, outScope)
+	//}
 
 	argList := make([]memo.GroupID, len(f.Exprs))
 	for i, pexpr := range f.Exprs {
@@ -578,15 +581,14 @@ func NewScalar(
 	sb.scope.builder = &sb.Builder
 
 	// Put all the columns in the current scope.
-	sb.scope.cols = make([]scopeColumn, 0, md.NumColumns())
 	for colID := opt.ColumnID(1); int(colID) <= md.NumColumns(); colID++ {
 		name := tree.Name(md.ColumnLabel(colID))
-		sb.scope.cols = append(sb.scope.cols, scopeColumn{
-			origName: name,
-			name:     name,
-			typ:      md.ColumnType(colID),
-			id:       colID,
-		})
+		newCol := sb.colAlloc.alloc()
+		newCol.origName = name
+		newCol.name = name
+		newCol.typ = md.ColumnType(colID)
+		newCol.id = colID
+		sb.scope.cols.append(newCol)
 	}
 
 	return sb

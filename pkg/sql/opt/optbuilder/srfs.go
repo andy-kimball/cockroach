@@ -29,7 +29,7 @@ type srf struct {
 	*tree.FuncExpr
 
 	// cols contains the output columns of the srf.
-	cols []scopeColumn
+	cols scopeColList
 
 	// group is the top level memo GroupID of the srf.
 	group memo.GroupID
@@ -97,9 +97,9 @@ func (b *Builder) buildZip(exprs tree.Exprs, inScope *scope) (outScope *scope) {
 	}
 
 	// Get the output columns of the Zip operation and construct the Zip.
-	colList := make(opt.ColList, len(outScope.cols))
-	for i := 0; i < len(colList); i++ {
-		colList[i] = outScope.cols[i].id
+	colList := make(opt.ColList, outScope.cols.count())
+	for i, col := 0, outScope.cols.first; i < len(colList); i, col = i+1, col.next {
+		colList[i] = col.id
 	}
 	outScope.group = b.factory.ConstructZip(
 		b.factory.InternList(elems), b.factory.InternColList(colList),
@@ -153,7 +153,7 @@ func (b *Builder) constructProjectSet(in memo.GroupID, srfs []*srf) memo.GroupID
 	colList := make(opt.ColList, 0, len(srfs))
 	elems := make([]memo.GroupID, len(srfs))
 	for i, srf := range srfs {
-		for _, col := range srf.cols {
+		for col := srf.cols.first; col != nil; col = col.next {
 			colList = append(colList, col.id)
 		}
 		elems[i] = srf.group

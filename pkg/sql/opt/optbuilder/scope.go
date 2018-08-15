@@ -37,7 +37,7 @@ import (
 type scope struct {
 	builder *Builder
 	parent  *scope
-	cols    []scopeColumn
+	cols    scopeColList
 	groupby groupby
 
 	// ordering records the ORDER BY columns associated with this scope. Each
@@ -50,7 +50,7 @@ type scope struct {
 
 	// extraCols contains columns specified by the ORDER BY or DISTINCT ON clauses
 	// which don't appear in cols.
-	extraCols []scopeColumn
+	extraCols scopeColList
 
 	// group is the memo.GroupID of the relational operator built with this scope.
 	group memo.GroupID
@@ -110,13 +110,15 @@ func (s *scope) replace() *scope {
 
 // appendColumns adds newly bound variables to this scope.
 // The groups in the new columns are reset to 0.
-func (s *scope) appendColumns(src *scope) {
-	l := len(s.cols)
-	s.cols = append(s.cols, src.cols...)
-	// We want to reset the groups, as these become pass-through columns in the
-	// new scope.
-	for i := l; i < len(s.cols); i++ {
-		s.cols[i].group = 0
+func (s *scope) appendColumns(list scopeColList) {
+	for col := list.first; col != nil; col = col.next {
+		newCol := s.builder.colAlloc.alloc()
+		*newCol = *col
+		newCol.next = nil
+		s.cols.append(newCol)
+
+		// Reset the group, as this becomes a pass-through column in the new scope.
+		newCol.group = 0
 	}
 }
 
@@ -124,10 +126,12 @@ func (s *scope) appendColumns(src *scope) {
 // It returns a pointer to the new column.  The group in the new column is reset
 // to 0.
 func (s *scope) appendColumn(col *scopeColumn, label string) *scopeColumn {
-	s.cols = append(s.cols, *col)
-	newCol := &s.cols[len(s.cols)-1]
-	// We want to reset the group, as this becomes a pass-through column in the
-	// new scope.
+	newCol := s.builder.colAlloc.alloc()
+	*newCol = *col
+	newCol.next = nil
+	s.cols.append(newCol)
+
+	// Reset the group, as this becomes a pass-through column in the new scope.
 	newCol.group = 0
 	if label != "" {
 		newCol.name = tree.Name(label)
@@ -135,21 +139,24 @@ func (s *scope) appendColumn(col *scopeColumn, label string) *scopeColumn {
 	return newCol
 }
 
-// addExtraColumns adds the given columns as extra columns, ignoring any
+// appendExtraColumns adds the given columns as extra columns, ignoring any
 // duplicate columns that are already in the scope.
-func (s *scope) addExtraColumns(cols []scopeColumn) {
+func (s *scope) appendExtraColumns(list scopeColList) {
 	existing := s.colSetWithExtraCols()
-	for i := range cols {
-		if !existing.Contains(int(cols[i].id)) {
-			s.extraCols = append(s.extraCols, cols[i])
+	for col := list.first; col != nil; col = col.next {
+		if !existing.Contains(int(col.id)) {
+			newCol := s.builder.colAlloc.alloc()
+			*newCol = *col
+			newCol.next = nil
+			s.extraCols.append(newCol)
 		}
 	}
 }
 
 // setOrdering sets the ordering in the physical properties and adds any new
 // columns as extra columns.
-func (s *scope) setOrdering(cols []scopeColumn, ord opt.Ordering) {
-	s.addExtraColumns(cols)
+func (s *scope) setOrdering(list scopeColList, ord opt.Ordering) {
+	s.appendExtraColumns(list)
 	s.ordering = ord
 }
 
@@ -164,26 +171,29 @@ func (s *scope) copyOrdering(src *scope) {
 	existing := s.colSetWithExtraCols()
 	for _, ordCol := range src.ordering {
 		if !existing.Contains(int(ordCol.ID())) {
-			col := *src.getColumn(ordCol.ID())
-			// We want to reset the group, as this becomes a pass-through column in
-			// the new scope.
-			col.group = 0
-			s.extraCols = append(s.extraCols, col)
+			newCol := s.builder.colAlloc.alloc()
+			*newCol = *src.getColumn(ordCol.ID())
+			newCol.next = nil
+
+			// Reset the group, as this becomes a pass-through column in the new
+			// scope.
+			newCol.group = 0
+			s.extraCols.append(newCol)
 		}
 	}
 }
 
 // getColumn returns the scopeColumn with the given id (either in cols or
 // extraCols).
-func (s *scope) getColumn(col opt.ColumnID) *scopeColumn {
-	for i := range s.cols {
-		if s.cols[i].id == col {
-			return &s.cols[i]
+func (s *scope) getColumn(id opt.ColumnID) *scopeColumn {
+	for col := s.cols.first; col != nil; col = col.next {
+		if col.id == id {
+			return col
 		}
 	}
-	for i := range s.extraCols {
-		if s.extraCols[i].id == col {
-			return &s.extraCols[i]
+	for col := s.extraCols.first; col != nil; col = col.next {
+		if col.id == id {
+			return col
 		}
 	}
 	return nil
@@ -201,9 +211,8 @@ func (s *scope) makeOrderingChoice() props.OrderingChoice {
 func (s *scope) makePhysicalProps() props.Physical {
 	p := props.Physical{}
 
-	p.Presentation = make(props.Presentation, 0, len(s.cols))
-	for i := range s.cols {
-		col := &s.cols[i]
+	p.Presentation = make(props.Presentation, 0, s.cols.count())
+	for col := s.cols.first; col != nil; col = col.next {
 		if !col.hidden {
 			p.Presentation = append(p.Presentation, opt.LabeledColumn{
 				Label: string(col.name),
@@ -275,13 +284,11 @@ func (s *scope) resolveAndRequireType(
 // isOuterColumn returns true if the given column is not present in the current
 // scope (it may or may not be present in an ancestor scope).
 func (s *scope) isOuterColumn(id opt.ColumnID) bool {
-	for i := range s.cols {
-		col := &s.cols[i]
+	for col := s.cols.first; col != nil; col = col.next {
 		if col.id == id {
 			return false
 		}
 	}
-
 	return true
 }
 
@@ -289,8 +296,8 @@ func (s *scope) isOuterColumn(id opt.ColumnID) bool {
 // excluding orderByCols.
 func (s *scope) colSet() opt.ColSet {
 	var colSet opt.ColSet
-	for i := range s.cols {
-		colSet.Add(int(s.cols[i].id))
+	for col := s.cols.first; col != nil; col = col.next {
+		colSet.Add(int(col.id))
 	}
 	return colSet
 }
@@ -299,8 +306,8 @@ func (s *scope) colSet() opt.ColSet {
 // including extraCols.
 func (s *scope) colSetWithExtraCols() opt.ColSet {
 	colSet := s.colSet()
-	for i := range s.extraCols {
-		colSet.Add(int(s.extraCols[i].id))
+	for col := s.extraCols.first; col != nil; col = col.next {
+		colSet.Add(int(col.id))
 	}
 	return colSet
 }
@@ -319,22 +326,15 @@ func (s *scope) hasSameColumns(other *scope) bool {
 
 // removeHiddenCols removes hidden columns from the scope.
 func (s *scope) removeHiddenCols() {
-	n := 0
-	for i := range s.cols {
-		if !s.cols[i].hidden {
-			if n != i {
-				s.cols[n] = s.cols[i]
-			}
-			n++
-		}
-	}
-	s.cols = s.cols[:n]
+	s.cols.removeMatches(func(col *scopeColumn) bool {
+		return col.hidden
+	})
 }
 
 // isAnonymousTable returns true if the table name of the first column
 // in this scope is empty.
 func (s *scope) isAnonymousTable() bool {
-	return len(s.cols) > 0 && s.cols[0].table.TableName == ""
+	return !s.cols.empty() && s.cols.first.table.TableName == ""
 }
 
 // setTableAlias qualifies the names of all columns in this scope with the
@@ -343,8 +343,8 @@ func (s *scope) isAnonymousTable() bool {
 // qualifications, as if the columns were part of an "anonymous" table.
 func (s *scope) setTableAlias(alias tree.Name) {
 	tn := tree.MakeUnqualifiedTableName(alias)
-	for i := range s.cols {
-		s.cols[i].table = tn
+	for col := s.cols.first; col != nil; col = col.next {
+		col.table = tn
 	}
 }
 
@@ -352,8 +352,7 @@ func (s *scope) setTableAlias(alias tree.Name) {
 // in this scope. Returns nil if the expression is not found.
 func (s *scope) findExistingCol(expr tree.TypedExpr) *scopeColumn {
 	exprStr := symbolicExprStr(expr)
-	for i := range s.cols {
-		col := &s.cols[i]
+	for col := s.cols.first; col != nil; col = col.next {
 		if expr == col || exprStr == col.getExprStr() {
 			return col
 		}
@@ -367,7 +366,8 @@ func (s *scope) findExistingCol(expr tree.TypedExpr) *scopeColumn {
 func (s *scope) getAggregateCols() []scopeColumn {
 	// Aggregates are always clustered at the end of the column list, in the
 	// same order as s.groupby.aggs.
-	return s.cols[len(s.cols)-len(s.groupby.aggs):]
+	// TODO(andyk)
+	return nil //s.cols[len(s.cols)-len(s.groupby.aggs):]
 }
 
 // findAggregate finds the given aggregate among the bound variables
@@ -461,8 +461,7 @@ func (s *scope) FindSourceProvidingColumn(
 	// search the parent scope. If the column is not found in any of the
 	// ancestor scopes, we return an error.
 	for ; s != nil; s, allowHidden = s.parent, false {
-		for i := range s.cols {
-			col := &s.cols[i]
+		for col := s.cols.first; col != nil; col = col.next {
 			// TODO(rytaft): Do not return a match if this column is being
 			// backfilled, or the column expression being resolved is not from
 			// a selector column expression from an UPDATE/DELETE.
@@ -539,7 +538,7 @@ func (s *scope) FindSourceMatchingName(
 	var source tree.TableName
 	for ; s != nil; s = s.parent {
 		sources := make(map[tree.TableName]struct{})
-		for _, col := range s.cols {
+		for col := s.cols.first; col != nil; col = col.next {
 			sources[col.table] = exists
 		}
 
@@ -601,8 +600,7 @@ func (s *scope) Resolve(
 
 	// Otherwise, a table is known but not the column yet.
 	inScope := srcMeta.(*scope)
-	for i := range inScope.cols {
-		col := &inScope.cols[i]
+	for col := inScope.cols.first; col != nil; col = col.next {
 		if col.name == colName && sourceNameMatches(*prefix, col.table) {
 			return col, nil
 		}
@@ -797,7 +795,7 @@ func (s *scope) replaceSRF(f *tree.FuncExpr) *srf {
 
 	// Add the output columns to this scope, so the column references added
 	// by the build process will not be treated as outer columns.
-	s.cols = append(s.cols, srf.cols...)
+	s.appendColumns(srf.cols)
 	return srf
 }
 
@@ -823,23 +821,24 @@ func (s *scope) replaceSubquery(sub *tree.Subquery, multiRow bool, desiredColumn
 	outScope.setTableAlias("")
 	outScope.removeHiddenCols()
 
-	if desiredColumns > 0 && len(outScope.cols) != desiredColumns {
-		n := len(outScope.cols)
+	colCount := outScope.cols.count()
+	if desiredColumns > 0 && colCount != desiredColumns {
 		switch desiredColumns {
 		case 1:
 			panic(builderError{pgerror.NewErrorf(pgerror.CodeSyntaxError,
-				"subquery must return only one column, found %d", n)})
+				"subquery must return only one column, found %d", colCount)})
 		default:
 			panic(builderError{pgerror.NewErrorf(pgerror.CodeSyntaxError,
-				"subquery must return %d columns, found %d", desiredColumns, n)})
+				"subquery must return %d columns, found %d", desiredColumns, colCount)})
 		}
 	}
 
-	if len(outScope.extraCols) > 0 {
+	extraColCount := outScope.extraCols.count()
+	if extraColCount > 0 {
 		// We need to add a projection to remove the extra columns.
 		projScope := outScope.push()
-		projScope.appendColumns(outScope)
-		projScope.group = s.builder.constructProject(outScope.group, projScope.cols)
+		projScope.appendColumns(outScope.cols)
+		projScope.group = s.builder.constructProject(outScope.group, projScope.cols, scopeColList{})
 		outScope = projScope
 	}
 
@@ -869,15 +868,16 @@ func (s *scope) IndexedVarEval(idx int, ctx *tree.EvalContext) (tree.Datum, erro
 
 // IndexedVarResolvedType is part of the IndexedVarContainer interface.
 func (s *scope) IndexedVarResolvedType(idx int) types.T {
-	if idx >= len(s.cols) {
-		if len(s.cols) == 0 {
+	col := s.cols.ith(idx)
+	if col == nil {
+		if s.cols.empty() {
 			panic(builderError{pgerror.NewErrorf(pgerror.CodeUndefinedColumnError,
 				"column reference @%d not allowed in this context", idx+1)})
 		}
 		panic(builderError{pgerror.NewErrorf(pgerror.CodeUndefinedColumnError,
 			"invalid column ordinal: @%d", idx+1)})
 	}
-	return s.cols[idx].typ
+	return col.typ
 }
 
 // IndexedVarNodeFormatter is part of the IndexedVarContainer interface.
@@ -902,8 +902,7 @@ func (s *scope) newAmbiguousColumnError(
 		fmt.Fprintf(&msgBuf, "%s%s.%s", sep, name, colString)
 		sep = ", "
 	}
-	for i := range s.cols {
-		col := &s.cols[i]
+	for col := s.cols.first; col != nil; col = col.next {
 		if col.name == n && (allowHidden || !col.hidden) {
 			if col.table.TableName == "" && !col.hidden {
 				if moreThanOneCandidateFromAnonSource {

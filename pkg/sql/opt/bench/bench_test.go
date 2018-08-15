@@ -100,6 +100,34 @@ func BenchmarkPhases(b *testing.B) {
 	}
 }
 
+func TestOptBuild(t *testing.T) {
+	stmt, err := parser.ParseOne(`SELECT k, v FROM kv WHERE k IN ($1)`)
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
+
+	cat := testcat.New()
+	_, err = cat.ExecuteDDL(`CREATE TABLE kv (k BIGINT NOT NULL PRIMARY KEY, v BYTES NOT NULL)`)
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
+
+	ctx := context.Background()
+	semaCtx := tree.MakeSemaContext(false /* privileged */)
+	evalCtx := tree.MakeTestingEvalContext(cluster.MakeTestingClusterSettings())
+
+	for i := 0; i < 1000000; i++ {
+		opt := xform.NewOptimizer(&evalCtx)
+		opt.DisableOptimizations()
+
+		bld := optbuilder.New(ctx, &semaCtx, &evalCtx, cat, opt.Factory(), stmt)
+		_, _, err = bld.Build()
+		if err != nil {
+			t.Fatalf("%v", err)
+		}
+	}
+}
+
 type benchmark struct {
 }
 

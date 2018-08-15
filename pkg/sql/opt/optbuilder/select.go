@@ -154,10 +154,10 @@ func (b *Builder) buildView(view opt.View, inScope *scope) (outScope *scope) {
 	// Update data source name to be the name of the view. And if view columns
 	// are specified, then update names of output columns.
 	hasCols := view.ColumnNameCount() > 0
-	for i := range outScope.cols {
-		outScope.cols[i].table = *view.Name()
+	for i, col := 0, outScope.cols.first; col != nil; i, col = i+1, col.next {
+		col.table = *view.Name()
 		if hasCols {
-			outScope.cols[i].name = view.ColumnName(i)
+			col.name = view.ColumnName(i)
 		}
 	}
 
@@ -192,8 +192,8 @@ func (b *Builder) renameSource(as tree.AliasClause, scope *scope) {
 
 	if len(colAlias) > 0 {
 		// The column aliases can only refer to explicit columns.
-		for colIdx, aliasIdx := 0, 0; aliasIdx < len(colAlias); colIdx++ {
-			if colIdx >= len(scope.cols) {
+		for aliasIdx, col := 0, scope.cols.first; aliasIdx < len(colAlias); col = col.next {
+			if col == nil {
 				srcName := tree.ErrString(&tableAlias)
 				panic(builderError{pgerror.NewErrorf(
 					pgerror.CodeInvalidColumnReferenceError,
@@ -201,10 +201,10 @@ func (b *Builder) renameSource(as tree.AliasClause, scope *scope) {
 					srcName, aliasIdx, len(colAlias),
 				)})
 			}
-			if scope.cols[colIdx].hidden {
+			if col.hidden {
 				continue
 			}
-			scope.cols[colIdx].name = colAlias[aliasIdx]
+			col.name = colAlias[aliasIdx]
 			aliasIdx++
 		}
 	}
@@ -264,7 +264,6 @@ func (b *Builder) buildScan(
 
 	var tabColIDs opt.ColSet
 	outScope = inScope.push()
-	outScope.cols = make([]scopeColumn, colCount)
 	for i := 0; i < colCount; i++ {
 		ord := i
 		if ordinals != nil {
@@ -275,14 +274,14 @@ func (b *Builder) buildScan(
 		colID := tabID.ColumnID(ord)
 		tabColIDs.Add(int(colID))
 		name := col.ColName()
-		outScope.cols[i] = scopeColumn{
-			id:       colID,
-			origName: name,
-			name:     name,
-			table:    *tn,
-			typ:      col.DatumType(),
-			hidden:   col.IsHidden(),
-		}
+		newCol := b.colAlloc.alloc()
+		newCol.id = colID
+		newCol.origName = name
+		newCol.name = name
+		newCol.table = *tn
+		newCol.typ = col.DatumType()
+		newCol.hidden = col.IsHidden()
+		outScope.cols.append(newCol)
 	}
 
 	if tab.IsVirtualTable() {
@@ -395,9 +394,8 @@ func (b *Builder) buildSelect(stmt *tree.Select, inScope *scope) (outScope *scop
 
 	if outScope.ordering.Empty() && orderBy != nil {
 		projectionsScope := outScope.replace()
-		projectionsScope.cols = make([]scopeColumn, 0, len(outScope.cols))
-		for i := range outScope.cols {
-			b.buildScalarProjection(&outScope.cols[i], "", outScope, projectionsScope)
+		for col := outScope.cols.first; col != nil; col = col.next {
+			b.buildScalarProjection(col, "", outScope, projectionsScope)
 		}
 		b.buildOrderBy(orderBy, outScope, projectionsScope)
 		b.constructProjectForScope(outScope, projectionsScope)
@@ -427,12 +425,14 @@ func (b *Builder) buildSelectClause(
 
 	var projectionsScope *scope
 	if b.needsAggregation(sel, orderBy) {
-		outScope, projectionsScope = b.buildAggregation(sel, orderBy, fromScope)
+		// TODO(andyk)
+		//outScope, projectionsScope = b.buildAggregation(sel, orderBy, fromScope)
 	} else {
 		projectionsScope = fromScope.replace()
 		b.buildProjectionList(sel.Exprs, fromScope, projectionsScope)
 		b.buildOrderBy(orderBy, fromScope, projectionsScope)
-		b.buildDistinctOnArgs(sel.DistinctOn, fromScope, projectionsScope)
+		// TODO(andyk)
+		//b.buildDistinctOnArgs(sel.DistinctOn, fromScope, projectionsScope)
 		outScope = fromScope
 	}
 
@@ -448,7 +448,8 @@ func (b *Builder) buildSelectClause(
 		if projectionsScope.distinctOnCols.Empty() {
 			outScope.group = b.constructDistinct(outScope)
 		} else {
-			outScope = b.buildDistinctOn(projectionsScope.distinctOnCols, outScope)
+			// TODO(andyk)
+			//outScope = b.buildDistinctOn(projectionsScope.distinctOnCols, outScope)
 		}
 	}
 	return outScope
@@ -469,7 +470,7 @@ func (b *Builder) buildFrom(from *tree.From, where *tree.Where, inScope *scope) 
 	}
 
 	var joinTables map[string]struct{}
-	colsAdded := 0
+	var colsAdded *scopeColumn
 
 	for _, table := range from.Tables {
 		tableScope := b.buildDataSource(table, nil /* indexFlags */, inScope)
@@ -483,15 +484,16 @@ func (b *Builder) buildFrom(from *tree.From, where *tree.Where, inScope *scope) 
 		if joinTables == nil {
 			joinTables = make(map[string]struct{})
 		}
-		for _, col := range outScope.cols[colsAdded:] {
+		for col := colsAdded; col != nil; col = col.next {
 			joinTables[col.table.FQString()] = exists
 		}
-		colsAdded = len(outScope.cols)
+		colsAdded = outScope.cols.last
 
 		// Check that the same table name is not used multiple times.
-		b.validateJoinTableNames(joinTables, tableScope)
+		// TODO(andyk)
+		//b.validateJoinTableNames(joinTables, tableScope)
 
-		outScope.appendColumns(tableScope)
+		outScope.appendColumns(tableScope.cols)
 		outScope.group = b.factory.ConstructInnerJoin(
 			outScope.group, tableScope.group, b.factory.ConstructTrue(),
 		)

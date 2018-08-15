@@ -27,7 +27,7 @@ import (
 // after it has been type-checked and added to the memo.
 type subquery struct {
 	// cols contains the output columns of the subquery.
-	cols []scopeColumn
+	cols scopeColList
 
 	// group is the top level memo GroupID of the subquery.
 	group memo.GroupID
@@ -129,16 +129,17 @@ func (s *subquery) TypeCheck(_ *tree.SemaContext, desired types.T) (tree.TypedEx
 		return s, nil
 	}
 
-	if len(s.cols) == 1 {
-		s.typ = s.cols[0].typ
+	cnt := s.cols.count()
+	if cnt == 1 {
+		s.typ = s.cols.first.typ
 	} else {
 		t := types.TTuple{
-			Types:  make([]types.T, len(s.cols)),
-			Labels: make([]string, len(s.cols)),
+			Types:  make([]types.T, cnt),
+			Labels: make([]string, cnt),
 		}
-		for i := range s.cols {
-			t.Types[i] = s.cols[i].typ
-			t.Labels[i] = string(s.cols[i].name)
+		for i, col := 0, s.cols.first; col != nil; i, col = i+1, col.next {
+			t.Types[i] = col.typ
+			t.Labels[i] = string(col.name)
 		}
 		s.typ = t
 	}
@@ -180,32 +181,35 @@ func (b *Builder) buildSubqueryProjection(
 	out = s.group
 	outScope = inScope.replace()
 
-	switch len(s.cols) {
+	cnt := s.cols.count()
+	switch cnt {
 	case 0:
 		panic("subquery returned 0 columns")
 
 	case 1:
-		outScope.cols = append(outScope.cols, s.cols[0])
+		newCol := b.colAlloc.alloc()
+		*newCol = *s.cols.first
+		outScope.cols.append(newCol)
 
 	default:
 		// Wrap the subquery in a projection with a single column.
 		// col1, col2... from the subquery becomes tuple{col1, col2...} in the
 		// projection.
-		cols := make(tree.Exprs, len(s.cols))
-		colGroups := make([]memo.GroupID, len(s.cols))
+		exprs := make(tree.Exprs, cnt)
+		colGroups := make([]memo.GroupID, cnt)
 		typ := types.TTuple{
-			Types: make([]types.T, len(s.cols)),
+			Types: make([]types.T, cnt),
 		}
-		for i := range s.cols {
-			cols[i] = &s.cols[i]
-			typ.Types[i] = s.cols[i].ResolvedType()
-			colGroups[i] = b.factory.ConstructVariable(b.factory.InternColumnID(s.cols[i].id))
+		for i, col := 0, s.cols.first; col != nil; i, col = 0, col.next {
+			exprs[i] = col
+			typ.Types[i] = col.ResolvedType()
+			colGroups[i] = b.factory.ConstructVariable(b.factory.InternColumnID(col.id))
 		}
 
-		texpr := tree.NewTypedTuple(typ, cols)
+		texpr := tree.NewTypedTuple(typ, exprs)
 		tup := b.factory.ConstructTuple(b.factory.InternList(colGroups), b.factory.InternType(typ))
 		col := b.synthesizeColumn(outScope, "", texpr.ResolvedType(), texpr, tup)
-		out = b.constructProject(out, []scopeColumn{*col})
+		out = b.constructProject(out, scopeColList{first: col}, scopeColList{})
 	}
 
 	return out, outScope

@@ -31,22 +31,23 @@ func (b *Builder) constructProjectForScope(inScope, projectionsScope *scope) {
 		projectionsScope.group = inScope.group
 	} else {
 		projectionsScope.group = b.constructProject(
-			inScope.group, append(projectionsScope.cols, projectionsScope.extraCols...),
+			inScope.group, projectionsScope.cols, projectionsScope.extraCols,
 		)
 	}
 }
 
-func (b *Builder) constructProject(input memo.GroupID, cols []scopeColumn) memo.GroupID {
+func (b *Builder) constructProject(input memo.GroupID, cols, extraCols scopeColList) memo.GroupID {
+	colCount := cols.count()
 	def := memo.ProjectionsOpDef{
-		SynthesizedCols: make(opt.ColList, 0, len(cols)),
+		SynthesizedCols: make(opt.ColList, 0, colCount),
 	}
 
-	groupList := make([]memo.GroupID, 0, len(cols))
+	groupList := make([]memo.GroupID, 0, colCount)
 
 	// Deduplicate the columns; we only need to project each column once.
 	colSet := opt.ColSet{}
-	for i := range cols {
-		id, group := cols[i].id, cols[i].group
+	for col := cols.first; col != nil; col = col.next {
+		id, group := col.id, col.group
 		if !colSet.Contains(int(id)) {
 			if group == 0 {
 				def.PassthroughCols.Add(int(id))
@@ -83,10 +84,6 @@ func (b *Builder) buildProjectionList(selects tree.SelectExprs, inScope *scope, 
 
 	b.semaCtx.Properties.Require("SELECT", tree.RejectNestedGenerators)
 	inScope.replaceSRFs = true
-
-	if outScope.cols == nil {
-		outScope.cols = make([]scopeColumn, 0, len(selects))
-	}
 
 	for _, e := range selects {
 		// Start with fast path, looking for simple column reference.
@@ -171,7 +168,7 @@ func (b *Builder) buildScalarProjection(
 	texpr tree.TypedExpr, label string, inScope, outScope *scope,
 ) *scopeColumn {
 	b.buildScalarHelper(texpr, label, inScope, outScope)
-	return &outScope.cols[len(outScope.cols)-1]
+	return outScope.cols.lastCol()
 }
 
 // finishBuildScalar completes construction of a new scalar expression. If

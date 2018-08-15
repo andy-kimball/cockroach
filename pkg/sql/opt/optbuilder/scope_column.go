@@ -23,6 +23,98 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/sql/sem/types"
 )
 
+const scopeColInlineCount = 16
+
+type scopeColAlloc struct {
+	inline      [scopeColInlineCount]scopeColumn
+	inlineCount int
+	more        []scopeColumn
+}
+
+func (a *scopeColAlloc) alloc() *scopeColumn {
+	if a.inlineCount < scopeColInlineCount {
+		a.inlineCount++
+		return &a.inline[a.inlineCount-1]
+	} else if a.more == nil {
+		a.more = make([]scopeColumn, 1, scopeColInlineCount)
+		return &a.more[0]
+	} else if len(a.more) == cap(a.more) {
+		a.more = make([]scopeColumn, 1, len(a.more)*2)
+		return &a.more[0]
+	}
+	a.more = append(a.more, scopeColumn{})
+	return &a.more[len(a.more)-1]
+}
+
+type scopeColList struct {
+	first, last *scopeColumn
+}
+
+func (l *scopeColList) empty() bool {
+	return l.first == nil
+}
+
+func (l *scopeColList) count() int {
+	cnt := 0
+	for col := l.first; col != nil; col = col.next {
+		cnt++
+	}
+	return cnt
+}
+
+func (l *scopeColList) lastCol() *scopeColumn {
+	if l.last != nil {
+		return l.last
+	}
+	return l.first
+}
+
+func (l *scopeColList) ith(i int) *scopeColumn {
+	col := l.first
+	for {
+		if i <= 0 || col == nil {
+			return col
+		}
+		col = col.next
+		i--
+	}
+}
+
+func (l *scopeColList) append(col *scopeColumn) {
+	if col.next != nil {
+		panic("cannot append column that is part of list; use appendList for that")
+	}
+	if l.first == nil {
+		l.first = col
+	} else if l.last == nil {
+		l.first.next = col
+		l.last = col
+	} else {
+		l.last.next = col
+		l.last = col
+	}
+}
+
+func (l *scopeColList) removeMatches(match func(col *scopeColumn) bool) {
+	var prev *scopeColumn
+	for col := l.first; col != nil; col = col.next {
+		if match(col) {
+			if col == l.first {
+				l.first = col.next
+			} else {
+				prev.next = col.next
+			}
+		} else {
+			prev = col
+		}
+	}
+	if prev == l.first {
+		l.last = nil
+	} else {
+		l.last = prev
+	}
+}
+
 // scopeColumn holds per-column information that is scoped to a particular
 // relational expression. Note that scopeColumn implements the tree.TypedExpr
 // interface. During name resolution, unresolved column names in the AST are
@@ -55,6 +147,8 @@ type scopeColumn struct {
 	// exprStr contains a stringified representation of expr, or the original
 	// column name if expr is nil. It is populated lazily inside getExprStr().
 	exprStr string
+
+	next *scopeColumn
 }
 
 // getExprStr gets a stringified representation of the expression that this

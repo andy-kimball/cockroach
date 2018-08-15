@@ -47,9 +47,6 @@ func (b *Builder) buildShowTrace(
 		Compact: showTrace.Compact,
 		ColList: colsToColList(outScope.cols),
 	}
-	for i := range outScope.cols {
-		def.ColList[i] = outScope.cols[i].id
-	}
 	outScope.group = b.factory.ConstructShowTraceForSession(b.factory.InternShowTraceOpDef(&def))
 	return outScope
 }

@@ -29,7 +29,7 @@ import (
 )
 
 func checkFrom(expr tree.Expr, inScope *scope) {
-	if len(inScope.cols) == 0 {
+	if inScope.cols.empty() {
 		panic(builderError{pgerror.NewErrorf(pgerror.CodeInvalidNameError,
 			"cannot use %q without a FROM clause", tree.ErrString(expr))})
 	}
@@ -88,20 +88,18 @@ func (b *Builder) expandStar(
 		if err != nil {
 			panic(builderError{err})
 		}
-		for i := range inScope.cols {
-			col := inScope.cols[i]
+		for col := inScope.cols.first; col != nil; col = col.next {
 			if col.table == *src && !col.hidden {
-				exprs = append(exprs, &col)
+				exprs = append(exprs, col)
 				labels = append(labels, string(col.name))
 			}
 		}
 
 	case tree.UnqualifiedStar:
 		checkFrom(expr, inScope)
-		for i := range inScope.cols {
-			col := inScope.cols[i]
+		for col := inScope.cols.first; col != nil; col = col.next {
 			if !col.hidden {
-				exprs = append(exprs, &col)
+				exprs = append(exprs, col)
 				labels = append(labels, string(col.name))
 			}
 		}
@@ -163,15 +161,16 @@ func (b *Builder) synthesizeColumn(
 
 	name := tree.Name(label)
 	colID := b.factory.Metadata().AddColumn(label, typ)
-	scope.cols = append(scope.cols, scopeColumn{
-		origName: name,
-		name:     name,
-		typ:      typ,
-		id:       colID,
-		expr:     expr,
-		group:    group,
-	})
-	return &scope.cols[len(scope.cols)-1]
+	newCol := b.colAlloc.alloc()
+	newCol.origName = name
+	newCol.name = name
+	newCol.typ = typ
+	newCol.id = colID
+	newCol.expr = expr
+	newCol.group = group
+
+	scope.cols.append(newCol)
+	return scope.cols.lastCol()
 }
 
 func (b *Builder) synthesizeResultColumns(scope *scope, cols sqlbase.ResultColumns) {
@@ -230,6 +229,7 @@ func colIndex(numOriginalCols int, expr tree.Expr, context string) int {
 	return int(ord)
 }
 
+/*
 // colIdxByProjectionAlias returns the corresponding index in columns of an expression
 // that may refer to a column alias.
 // If there are no aliases in columns that expr refers to, then -1 is returned.
@@ -275,7 +275,7 @@ func colIdxByProjectionAlias(expr tree.Expr, op string, scope *scope) int {
 
 	return index
 }
-
+*/
 // flattenTuples extracts the members of tuples into a list of columns.
 func flattenTuples(exprs []tree.TypedExpr) []tree.TypedExpr {
 	// We want to avoid allocating new slices unless strictly necessary.
@@ -320,10 +320,10 @@ func symbolicExprStr(expr tree.Expr) string {
 	return tree.AsStringWithFlags(expr, tree.FmtCheckEquivalence)
 }
 
-func colsToColList(cols []scopeColumn) opt.ColList {
-	colList := make(opt.ColList, len(cols))
-	for i := range cols {
-		colList[i] = cols[i].id
+func colsToColList(cols scopeColList) opt.ColList {
+	colList := make(opt.ColList, cols.count())
+	for i, col := 0, cols.first; col != nil; i, col = i+1, col.next {
+		colList[i] = col.id
 	}
 	return colList
 }
