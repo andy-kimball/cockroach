@@ -1,0 +1,1203 @@
+pos,sql,local,localopt
+testdata/logic_test/select:121,"SELECT k,v FROM kv",6899,8482
+testdata/logic_test/select:331,SELECT value FROM boolean_table,6009,9611
+testdata/logic_test/postgres_jsonb:104,SELECT test_json ->> 2 FROM test_jsonb WHERE json_type = 'scalar',26064,67510
+testdata/logic_test/deep_interleaving:117,SELECT * FROM level4 WHERE k1 = 2 AND k2 = 20 AND k3 > 100 AND k3 < 300,51916,67562
+testdata/logic_test/collatedstring_constraint:34,SELECT a FROM p ORDER BY a,9376,9293
+testdata/logic_test/views:88,SELECT y FROM v2,22060,22110
+testdata/logic_test/table:469,SELECT a.public.c.d FROM a.public.c,5983,9679
+testdata/logic_test/select:505,"SELECT (NULL::int, NULL::int) NOT IN (SELECT * FROM (VALUES (1, 1)) AS t(a, b) WHERE a > 1)",23918,60705
+testdata/logic_test/postgres_jsonb:64,SELECT test_json -> 2 FROM test_jsonb WHERE json_type = 'array',26799,46907
+testdata/logic_test/interleaved:152,SELECT * FROM p1_0,6560,9626
+testdata/logic_test/aggregate:843,"SELECT bool_and(b), bool_or(b) FROM bools",15070,25295
+testdata/logic_test/typing:9,SELECT * FROM f,5374,10068
+testdata/logic_test/suboperators:147,"SELECT 1.0 < ANY(SELECT * FROM unnest(ARRAY[1.0, 1.1]))",14979,29532
+testdata/logic_test/show_trace:298,"SELECT operation, message FROM [SHOW KV TRACE FOR SESSION]",5999,6742
+testdata/logic_test/schema_change_in_txn:41,SELECT * FROM test.child@idx_child_parent_id,6497,9616
+testdata/logic_test/postgres_jsonb:141,SELECT (test_json->>3) IS NULL AS expect_true FROM test_jsonb WHERE json_type = 'array';,32300,57979
+testdata/logic_test/distinct_on:88,"SELECT DISTINCT ON (c, a, b) b FROM abc ORDER BY b",19432,17591
+testdata/logic_test/views:211,SELECT * FROM t,4989,9348
+testdata/logic_test/show_trace:270,"SELECT operation, regexp_replace(message, '(\d\d\d\d-\d\d-\d\dT\d\d:\d\d:\d\d\.)?\d\d\d\d\d+', '...P",22103,47275
+testdata/logic_test/postgres_jsonb:39,SELECT test_json -> 'field2' FROM test_jsonb WHERE json_type = 'object',27415,50097
+testdata/logic_test/delete:23,SELECT * FROM kv,5371,9482
+testdata/logic_test/datetime:283,SELECT count(DISTINCT (v)) FROM kv,12034,22213
+testdata/logic_test/tuple:129,"SELECT   (1, 1) > (0, NULL) AS a,   (1, 1) > (1, NULL) AS b,   (1, 1) > (2, NULL) AS c,   (1, 1) > (",60280,85753
+testdata/logic_test/select:553,"SELECT u + v FROM (SELECT x + 3, y + 10 FROM a) AS foo(u, v)",22518,44436
+testdata/logic_test/join:153,SELECT * FROM onecolumn AS a NATURAL FULL OUTER JOIN othercolumn AS b ORDER BY x,20489,49496
+testdata/logic_test/join:737,"SELECT t2.x, t1.x, x FROM t1 FULL OUTER JOIN t2 USING(x)",28391,59490
+testdata/logic_test/computed:106,"SELECT c, d FROM x",9171,11202
+testdata/logic_test/join:695,SELECT * FROM t1 NATURAL JOIN t2,28517,59636
+testdata/logic_test/union:157,SELECT v FROM uniontest WHERE k = 1 INTERSECT SELECT v FROM uniontest WHERE k = 2,40644,64292
+testdata/logic_test/delete:118,"SELECT k, v FROM unindexed",7089,8116
+testdata/logic_test/decimal:227,"SELECT d, d IS NaN, d = 'NaN', isnan(d) FROM s@{FORCE_INDEX=s_d_idx} ORDER BY d, d::TEXT",38736,60826
+testdata/logic_test/aggregate:389,"SELECT max(k), min(v) FROM kv HAVING min(v) > 2",32404,59020
+testdata/logic_test/ordinal_references:35,"SELECT b, a FROM foo ORDER BY @1",11081,21964
+testdata/logic_test/datetime:322,SELECT k FROM kv ORDER BY v,9431,12682
+testdata/logic_test/datetime:893,"SELECT b, b::date, c, c::date FROM u WHERE a = 123",31137,54356
+testdata/logic_test/postgres_jsonb:109,SELECT test_json ->> 2 FROM test_jsonb WHERE json_type = 'array',26346,50697
+testdata/logic_test/join:778,"SELECT s, str1.s, str2.s FROM str1 INNER JOIN str2 USING(s)",19371,42507
+testdata/logic_test/rows_from:22,"SELECT * FROM ROWS FROM (generate_series(1,0), generate_series(1,0))",7078,11524
+testdata/logic_test/join:638,SELECT * FROM pairs FULL OUTER JOIN square ON pairs.a + pairs.b = square.sq WHERE pairs.b%2 <> squar,34083,70530
+testdata/logic_test/collatedstring_uniqueindex1:90,"SELECT b, a FROM t ORDER BY b, a",14144,18938
+testdata/logic_test/aggregate:186,SELECT 3 FROM kv HAVING TRUE,9444,23979
+testdata/logic_test/where:63,SELECT 'hello' LIKE v FROM kvString WHERE k LIKE 'like%' ORDER BY k,23741,43523
+testdata/logic_test/update:92,SELECT * FROM kv2,5625,9878
+testdata/logic_test/postgres_jsonb:49,SELECT test_json ->> 'field2' FROM test_jsonb WHERE json_type = 'array',27112,52578
+testdata/logic_test/postgres_jsonb:136,SELECT (test_json->3) IS NULL AS expect_false FROM test_jsonb WHERE json_type = 'array';,30673,60756
+testdata/logic_test/aggregate:108,SELECT array_agg(NULL::TEXT) FROM (VALUES (1)) AS t(x),11451,61657
+testdata/logic_test/where:96,"SELECT * FROM ab WHERE a IN (1, 3, 4)",22447,31172
+testdata/logic_test/views:55,SELECT * FROM v6,31634,32305
+testdata/logic_test/join:1011,"SELECT * FROM foo JOIN bar USING (a, b, c)",30635,72367
+testdata/logic_test/collatedstring_index1:151,"SELECT a, b FROM t ORDER BY a, b",13122,18290
+testdata/logic_test/aggregate:246,"SELECT count(*), kv.s FROM kv GROUP BY s",18291,27986
+testdata/logic_test/aggregate:1145,"SELECT 1 FROM kv GROUP BY v, w::DECIMAL HAVING w::DECIMAL > 1",27690,65212
+testdata/logic_test/tuple:851,"SELECT (x).a, (x).b     FROM (SELECT (ROW(a, b) AS a, b) AS x FROM (VALUES (1, 'one')) AS t(a, b))",13914,33839
+testdata/logic_test/select_index:449,"SELECT a, b, d FROM noncover WHERE b=2 ORDER BY b",33010,41040
+testdata/logic_test/insert:298,SELECT * FROM kview,8946,16357
+testdata/logic_test/default:64,"SELECT a, b <= now(), c >= 0.0 FROM t WHERE a = 1",40862,65336
+testdata/logic_test/collatedstring_uniqueindex2:90,"SELECT b, a FROM t ORDER BY b, a",14123,19062
+testdata/logic_test/aggregate:979,SELECT min(v) FROM opt_test GROUP BY k,14773,30870
+testdata/logic_test/aggregate:535,SELECT count(k)+count(kv.v) FROM kv,22046,47507
+testdata/logic_test/upsert:157,"SELECT * FROM kv ORDER BY (k, v)",13639,15984
+testdata/logic_test/suboperators:167,"SELECT 1 = ANY(SELECT * FROM unnest(ARRAY[NULL, NULL]))",12860,30747
+testdata/logic_test/suboperators:172,SELECT * FROM abc WHERE a = ANY(SELECT a FROM abc WHERE b = 10),39002,82320
+testdata/logic_test/optimizer:69,SELECT * FROM test.t WHERE 2*v > (SELECT max(v) FROM test.t),68973,74188
+testdata/logic_test/join:372,"SELECT * FROM a FULL OUTER JOIN b ON (a.i = b.i and a.i>2) ORDER BY a.i, b.i",32390,65856
+testdata/logic_test/distinct:50,"SELECT DISTINCT y, z FROM xyz ORDER BY z",23768,20696
+testdata/logic_test/aggregate:973,SELECT min(v) FROM opt_test WHERE k <> 4,41874,83759
+testdata/logic_test/uuid:70,SELECT token2 FROM u WHERE token2='63616665-6630-3064-6465-616462656563',25734,40053
+testdata/logic_test/select_index:443,SELECT a FROM noncover WHERE b=2 ORDER BY c DESC,32554,51125
+testdata/logic_test/scale:125,SELECT d FROM td,6086,10550
+testdata/logic_test/join:214,SELECT * FROM empty AS a(x) LEFT OUTER JOIN onecolumn AS b(y) ON a.x = b.y,20357,46037
+testdata/logic_test/datetime:577,"SELECT k, date_trunc(element, input::date) = date_trunc_result::date, date_trunc(element, input::dat",43085,77834
+testdata/logic_test/aggregate:41,SELECT array_agg(v) FROM kv,14475,25979
+testdata/logic_test/json:486,SELECT true FROM x WHERE j->'a' @> '2'::JSONB,22177,36542
+testdata/logic_test/insert:307,SELECT * FROM kview,8664,16294
+testdata/logic_test/views:76,SELECT * FROM v2 ORDER BY x DESC LIMIT 1,23954,29296
+testdata/logic_test/upsert:445,SELECT * FROM issue_14052_2;,6889,8055
+testdata/logic_test/update:27,SELECT * FROM kv,5397,8069
+testdata/logic_test/tuple:463,"SELECT * FROM uvw WHERE (u, v, w) <= (2, 3, 1) ORDER BY u, v, w",45250,63612
+testdata/logic_test/select:601,SELECT * FROM c WHERE str >= 'moo',19928,25324
+testdata/logic_test/ordinality:44,SELECT * FROM (SELECT x||x FROM foo) WITH ORDINALITY,14868,23423
+testdata/logic_test/datetime:529,"SELECT k, date_trunc(element, input::timestamptz) = date_trunc_result, date_trunc(element, input::ti",43111,74259
+testdata/logic_test/computed:583,SELECT d FROM x,7543,11736
+testdata/logic_test/aggregate:393,"SELECT max(k), min(v) FROM kv HAVING max(v) > 2",33339,64379
+testdata/logic_test/select_index:455,"SELECT a, b FROM noncover WHERE b=2 AND d>3 ORDER BY b",44168,64222
+testdata/logic_test/aggregate:488,"SELECT count(DISTINCT k), count(DISTINCT v), count(DISTINCT (v)) FROM kv",25708,38439
+testdata/logic_test/system:51,SELECT id FROM system.descriptor,158592,162528
+testdata/logic_test/computed:170,"SELECT a, b, c FROM x",10474,11157
+testdata/logic_test/txn:61,SELECT * FROM kv,5437,7770
+testdata/logic_test/delete:45,SELECT * FROM kview,21281,22346
+testdata/logic_test/database:101,SELECT * FROM b.a,4132,6305
+testdata/logic_test/show_trace:104,"SELECT operation,        regexp_replace(regexp_replace(message, 'mutationJobs:<[^>]*>', 'mutationJob",24183,53622
+testdata/logic_test/computed:205,"SELECT a, b, c, d FROM x",10459,10383
+testdata/logic_test/collatedstring_index2:120,"SELECT a, b FROM t ORDER BY a, b",14165,18119
+testdata/logic_test/builtin_function:1925,"SELECT i FROM (VALUES   (sha512(NULL::string)),   (sha512(true::string)),   (sha512(false::string)),",16403,75095
+testdata/logic_test/views:130,SELECT * FROM test.v1,19193,20627
+testdata/logic_test/tuple:863,"SELECT (x).a, (x).b     FROM (SELECT (ROW(a, b) AS a, b) AS x FROM t) ORDER BY 1    LIMIT 1",17499,52742
+testdata/logic_test/interleaved:295,SELECT * FROM orders WHERE customer = 1 AND id = 1000,32291,36709
+testdata/logic_test/datetime:185,SELECT k FROM kv,6317,9931
+testdata/logic_test/collatedstring_uniqueindex2:108,"SELECT a, b FROM t ORDER BY a, b",14274,17735
+testdata/logic_test/srfs:577,"SELECT * FROM generate_subscripts(ARRAY[3,2,1], 1, false)",7130,13786
+testdata/logic_test/target_names:41,SELECT (pg_get_keywords()).word FROM t,12415,39919
+testdata/logic_test/ordinality:71,SELECT * FROM (SELECT * FROM foo WHERE x > 'a') WITH ORDINALITY,22269,32016
+testdata/logic_test/datetime:491,"SELECT k, date_trunc(element, input::timestamp) = date_trunc_result, date_trunc(element, input::time",42407,73607
+testdata/logic_test/computed:575,SELECT d FROM x,7522,11392
+testdata/logic_test/aggregate:610,SELECT max(v) FROM kv GROUP BY k HAVING k=100,35189,60988
+testdata/logic_test/where:69,SELECT 'hello' SIMILAR TO v FROM kvString WHERE k SIMILAR TO 'like[1-2]' ORDER BY k,32091,52886
+testdata/logic_test/order_by:127,"SELECT a, b, a+b AS ab FROM t WHERE b = 7 ORDER BY ab DESC, a",32675,85131
+testdata/logic_test/join:230,SELECT * FROM empty AS a(x) FULL OUTER JOIN onecolumn AS b(y) ON a.x = b.y ORDER BY b.y,24679,55731
+testdata/logic_test/aggregate:343,"SELECT count(*), k+v FROM kv GROUP BY k, v",26879,50033
+testdata/logic_test/update:72,SELECT * FROM kview,20636,22326
+testdata/logic_test/distinct:21,"SELECT y, z FROM xyz",8446,12451
+testdata/logic_test/distinct:124,SELECT count(*) FROM (SELECT DISTINCT y FROM xyz),15583,29756
+testdata/logic_test/aggregate:798,"SELECT round(variance(n), 2), round(variance(n), 2), round(variance(p)) FROM mnop",32431,63582
+testdata/logic_test/aggregate:1011,"SELECT to_hex(xor_agg(a)), b, xor_agg(c) FROM xor_bytes GROUP BY b ORDER BY b",28847,51255
+testdata/logic_test/where:103,"SELECT * FROM ab WHERE a IN (1, 3, 4, NULL)",24896,37595
+testdata/logic_test/postgres_jsonb:89,SELECT test_json ->> 'field4' FROM test_jsonb WHERE json_type = 'object',26105,49700
+testdata/logic_test/distinct:135,SELECT DISTINCT v FROM kv,6914,14226
+testdata/logic_test/datetime:190,SELECT k FROM kv where v = transaction_timestamp(),21496,28499
+testdata/logic_test/subquery:412,SELECT x FROM xyz WHERE x IN (SELECT x FROM xyz WHERE x = 7),39609,86377
+testdata/logic_test/suboperators:301,"SELECT 1 = ALL(SELECT * FROM unnest(ARRAY[1,1,1]))",12727,24900
+testdata/logic_test/schema_change_in_txn:356,SELECT * FROM want,6611,8444
+testdata/logic_test/parallel_stmts:250,"SELECT k, v FROM kv ORDER BY k",9047,10243
+testdata/logic_test/limit:26,"SELECT generate_series FROM generate_series(1, 100) ORDER BY generate_series OFFSET 3 ROWS FETCH NEX",6838,18127
+testdata/logic_test/aggregate:1124,"SELECT z, max(y) FROM group_ord@foo GROUP BY z",21316,34191
+testdata/logic_test/aggregate:1112,"SELECT z, x, max(y) FROM group_ord GROUP BY x, z ORDER BY x",25194,36742
+testdata/logic_test/zero:149,SELECT v FROM didx ORDER BY INDEX didx@vidx,14829,17343
+testdata/logic_test/upsert:486,SELECT * FROM issue_17339 ORDER BY a;,7509,9595
+testdata/logic_test/tuple:223,"SELECT k, v FROM kv WHERE (k, v) IN ((1, 100))",26332,38192
+testdata/logic_test/select_index_flags:19,SELECT * FROM abcd WHERE a >= 20 AND a <= 30,29969,39787
+testdata/logic_test/join:385,"SELECT * FROM a RIGHT OUTER JOIN b ON a.i=b.i ORDER BY b.i, b.b",24808,52488
+testdata/logic_test/computed:65,SELECT c FROM with_no_column_refs,6999,10942
+testdata/logic_test/aggregate:804,"SELECT round(stddev(n), 2), round(stddev(n), 2), round(stddev(p)) FROM mnop",30125,58892
+testdata/logic_test/union:162,SELECT v FROM uniontest WHERE k = 1 INTERSECT ALL SELECT v FROM uniontest WHERE k = 2,40753,68042
+testdata/logic_test/tuple:840,"SELECT (x).* FROM (   SELECT ((1,'2',true) AS e,f,g) AS x FROM tb )",15427,41151
+testdata/logic_test/schema_change_in_txn:55,SELECT * FROM test.kv@foo,9700,16941
+testdata/logic_test/join:51,SELECT * FROM onecolumn AS a(x) LEFT OUTER JOIN onecolumn AS b(y) ON a.x = b.y,19817,48405
+testdata/logic_test/distinct_on:116,"SELECT DISTINCT ON (x, y) y FROM xyz",13412,21022
+testdata/logic_test/aggregate:262,"SELECT count(*), kv.s FROM kv GROUP BY kv.s",17073,28136
+testdata/logic_test/select:546,"SELECT x, x + 1, y, y + 1, x + y FROM a",24189,41156
+testdata/logic_test/distinct:104,"SELECT DISTINCT y,z FROM xyz",8787,16229
+testdata/logic_test/decimal:72,SELECT * FROM t ORDER BY d,9419,13412
+testdata/logic_test/where:29,SELECT * FROM kv WHERE False,8024,11106
+testdata/logic_test/subquery:299,"SELECT * FROM (VALUES (1, 2)) AS foo",4102,7679
+testdata/logic_test/subquery:381,"SELECT * FROM (SELECT * FROM (VALUES (1, 8, 8), (3, 1, 1), (2, 4, 4)) AS moo (moo1, moo2, moo3) ORDE",12733,20200
+testdata/logic_test/json:180,SELECT a FROM multiple,6426,9155
+testdata/logic_test/distinct_on:202,"SELECT DISTINCT ON (x) y, z, x FROM xyz ORDER BY x ASC, z DESC, y DESC",16471,29673
+testdata/logic_test/computed:219,"SELECT a, b, c, d FROM x",9345,9133
+testdata/logic_test/aggregate:369,"SELECT count(kv.k) AS count_1, kv.v + kv.w AS lx FROM kv GROUP BY kv.v + kv.w",27296,49934
+testdata/logic_test/time:225,SELECT * FROM times ORDER BY t,6573,8281
+testdata/logic_test/storing:45,"SELECT a, b, d FROM t@d_idx",12179,15592
+testdata/logic_test/alter_column_type:27,SELECT * FROM t,28476,12727
+testdata/logic_test/tuple:822,SELECT ((ROW(1) AS a)).* FROM tb,6609,16501
+testdata/logic_test/select:126,SELECT v||'foo' FROM kv,14762,33299
+testdata/logic_test/select:167,SELECT test.kv.* FROM test.public.kv,6482,9944
+testdata/logic_test/select:439,SELECT NULL::int NOT IN (SELECT * FROM (VALUES (1)) AS t(a)),12956,28823
+testdata/logic_test/join:950,SELECT * FROM l RIGHT OUTER JOIN r USING(a) WHERE a = 3,33095,69221
+testdata/logic_test/subquery:354,"SELECT * FROM (SELECT * FROM xyz AS moo (moo1, moo2, moo3)) as foo (foo1) WHERE foo1 < 7",22799,23995
+testdata/logic_test/join:1004,"SELECT * FROM foo JOIN bar USING (a, b)",31086,61195
+testdata/logic_test/builtin_function:1400,"SELECT current_schemas(x) FROM (VALUES (true), (false)) AS t(x);",6340,18830
+testdata/logic_test/aggregate:254,"SELECT count(*), s FROM kv GROUP BY kv.s",17514,27038
+testdata/logic_test/subquery:260,SELECT * FROM xyz WHERE x = (SELECT min(x) FROM xyz),48168,63224
+testdata/logic_test/show_trace:413,"SELECT operation, regexp_replace(regexp_replace(regexp_replace(message, 'mutationJobs:<[^>]*>', 'mut",31345,63455
+testdata/logic_test/select:291,SELECT * FROM (SELECT * FROM xyzw LIMIT 5) OFFSET 5,12677,18928
+testdata/logic_test/aggregate:731,SELECT min(y) FROM xyz WHERE x = 7,43164,87466
+testdata/logic_test/views:138,SELECT * FROM test.v2,20607,20975
+testdata/logic_test/subquery:396,"SELECT foo.a FROM (VALUES (1), (2), (3)) AS foo (a)",4436,9810
+testdata/logic_test/rename_table:35,SELECT * FROM new_kv,5682,9070
+testdata/logic_test/views:240,SELECT * FROM v1,20207,20266
+testdata/logic_test/union:187,SELECT v FROM uniontest WHERE k = 1 UNION ALL SELECT v FROM uniontest WHERE k = 2 ORDER BY 1 DESC LI,45292,79288
+testdata/logic_test/truncate:133,SELECT * FROM d,3858,6484
+testdata/logic_test/select:424,"SELECT (NULL::int, 1) IN (SELECT * FROM (VALUES (1, 1)) AS t(a, b))",16028,44524
+testdata/logic_test/join:940,SELECT * FROM l LEFT OUTER JOIN r USING(a) WHERE a = 1,31405,71675
+testdata/logic_test/collatedstring:303,SELECT a FROM foo,5965,9712
+testdata/logic_test/tuple:253,SELECT 4 IN (SELECT c FROM t ORDER BY 1 DESC) AS r,18954,38099
+testdata/logic_test/srfs:316,SELECT * FROM upper('abc'),4983,9912
+testdata/logic_test/ordinal_references:62,SELECT sum(a) AS s FROM foo GROUP BY @2 ORDER BY s,16344,39665
+testdata/logic_test/typing:28,SELECT * FROM i,5844,8950
+testdata/logic_test/select:152,SELECT test.kv.* FROM kv,6293,10168
+testdata/logic_test/order_by:267,"SELECT * FROM bar ORDER BY baz, id",8323,13142
+testdata/logic_test/upsert:476,SELECT * FROM issue_17339 ORDER BY a;,7498,9505
+testdata/logic_test/order_by:36,"SELECT a, b FROM t ORDER BY b",11353,14640
+testdata/logic_test/as_of:21,SELECT * FROM t AS OF SYSTEM TIME INTERVAL '-1ns',209531,217788
+testdata/logic_test/show_source:258,SELECT * FROM [SHOW COMPACT TRACE FOR SESSION] LIMIT 0,5999,7804
+testdata/logic_test/join:825,"SELECT * FROM xyu INNER JOIN xyv USING(x, y) WHERE x > 2",51735,103336
+testdata/logic_test/array:643,SELECT b FROM a,5862,12232
+testdata/logic_test/aggregate:463,"SELECT v, count(k) FROM kv GROUP BY v ORDER BY v-count(k)",30531,51287
+testdata/logic_test/subquery:286,SELECT EXISTS(SELECT 1 FROM kv AS x WHERE x.k = 1),25744,47486
+testdata/logic_test/no_primary_key:30,SELECT count(rowid) FROM t,13441,21192
+testdata/logic_test/join:907,"SELECT * FROM (SELECT * FROM xyu ORDER BY x, y) AS xyu LEFT OUTER JOIN (SELECT * FROM xyv ORDER BY x",82562,137591
+testdata/logic_test/array:911,SELECT b FROM a,7262,11585
+testdata/logic_test/rename_index:80,SELECT * FROM users,6011,11519
+testdata/logic_test/parallel_stmts:303,"SELECT k, v FROM kv ORDER BY k",8682,10504
+testdata/logic_test/union:198,SELECT * FROM (VALUES (1)) a LEFT JOIN (VALUES (1) UNION VALUES (2)) b on a.column1 = b.column1;,16010,43560
+testdata/logic_test/storing:144,"SELECT a, b FROM t14601a ORDER BY a",13250,16500
+testdata/logic_test/select_index:471,SELECT * FROM noncover WHERE c > 0 AND d = 8,43409,47700
+testdata/logic_test/schema_change_in_txn:144,SELECT * FROM test.stock@bar,12442,20643
+testdata/logic_test/join:601,"SELECT * FROM pairs, square WHERE pairs.a + pairs.b = square.sq",28838,47377
+testdata/logic_test/family:79,SELECT * FROM abcd WHERE a = 1,22416,30174
+testdata/logic_test/postgresjoin:1877,"SELECT * FROM (SELECT name, n as s1_n FROM t1) as s1 NATURAL FULL JOIN (SELECT * FROM (SELECT name, ",59895,95047
+testdata/logic_test/database:153,SELECT * FROM b.a,4005,7123
+testdata/logic_test/suboperators:101,"SELECT * FROM abc WHERE a = ANY(ARRAY[4, NULL])",23809,29591
+testdata/logic_test/select_index:220,SELECT * FROM abcd@abcd WHERE a IS NULL AND b < 5,38197,49695
+testdata/logic_test/postgres_jsonb:59,SELECT test_json -> 2 FROM test_jsonb WHERE json_type = 'scalar',25314,50791
+testdata/logic_test/fk:385,SELECT count(*) FROM delivery,9212,21216
+testdata/logic_test/srfs:613,"SELECT * FROM generate_subscripts(ARRAY[3,2,1], 2)",6625,13644
+testdata/logic_test/suboperators:356,"SELECT * FROM abc WHERE a > ALL(SELECT * FROM unnest(ARRAY[NULL, NULL]))",27305,48038
+testdata/logic_test/serial:179,"SELECT count(DISTINCT a), count(DISTINCT b), count(DISTINCT c) FROM serials",33144,40129
+testdata/logic_test/schema_change_in_txn:414,SELECT * FROM student,6983,9508
+testdata/logic_test/collatedstring_index1:120,"SELECT a, b FROM t ORDER BY a, b",14075,18210
+testdata/logic_test/aggregate:279,"SELECT v, count(*), w FROM kv GROUP BY v, w",23055,29004
+testdata/logic_test/join:1025,SELECT * FROM foo JOIN bar ON foo.a = bar.a AND foo.b = bar.b,33298,68098
+testdata/logic_test/array:675,SELECT b FROM a,6739,13703
+testdata/logic_test/views:101,SELECT x FROM v7 ORDER BY x LIMIT 1,42614,52581
+testdata/logic_test/upsert:251,"SELECT * FROM abc ORDER BY (a, b, c)",18541,20020
+testdata/logic_test/suboperators:195,SELECT * FROM abc WHERE a >= ALL(SELECT a FROM abc WHERE a IS NOT NULL) OR b=10,51768,150390
+testdata/logic_test/select_index:15,SELECT a FROM t WHERE a < 4.0,27084,34287
+testdata/logic_test/rename_column:15,SELECT * FROM users,6123,8366
+testdata/logic_test/join:418,"SELECT * FROM onecolumn JOIN (VALUES (41),(42),(43)) AS a(x) USING(x)",13467,49913
+testdata/logic_test/aggregate:134,"SELECT count(*), COALESCE(max(k), 1) FROM kv",24251,56591
+testdata/logic_test/select_index:308,"SELECT * FROM xy WHERE (x, y) IN ((NULL, NULL), (1, NULL), (NULL, 1), (1, 1), (1, 2))",51695,77419
+testdata/logic_test/multi_statement:27,SELECT * FROM kv,5050,8201
+testdata/logic_test/decimal:176,SELECT * FROM s WHERE d = 'inf'::decimal,22432,36675
+testdata/logic_test/array:783,"SELECT * FROM unnest(ARRAY['a', 'B']) ORDER BY UNNEST;",5539,11594
+testdata/logic_test/alter_table:80,SELECT * FROM t,7663,11134
+testdata/logic_test/float:103,"SELECT f, f::string FROM vals",9801,21850
+testdata/logic_test/decimal:340,SELECT * FROM a,5778,9693
+testdata/logic_test/views:47,SELECT * FROM v2,18911,19937
+testdata/logic_test/views:95,SELECT x FROM v7,45061,50474
+testdata/logic_test/select_index:348,SELECT * FROM bool1 WHERE a IS NOT FALSE,21959,32294
+testdata/logic_test/order_by:13,SELECT c FROM t ORDER BY c,9852,13190
+testdata/logic_test/limit:59,"SELECT k, v FROM t ORDER BY k LIMIT 5",13921,21393
+testdata/logic_test/interleaved:142,SELECT * FROM p0,8270,10604
+testdata/logic_test/truncate:23,SELECT * FROM kview,20790,19173
+testdata/logic_test/poison_after_push:37,SELECT * FROM t,4075,7320
+testdata/logic_test/distinct_on:63,"SELECT DISTINCT ON (z, y, x) z FROM xyz",14616,26530
+testdata/logic_test/tuple:183,"SELECT ((1, 2), 'equal') = ((1, 2.1), 'equal') AS a   FROM tb",22601,53925
+testdata/logic_test/select:146,SELECT kv.* FROM kv,6611,9498
+testdata/logic_test/join:431,SELECT * FROM (twocolumn AS a JOIN twocolumn AS b USING(x) JOIN twocolumn AS c USING(x)) ORDER BY x ,31372,87958
+testdata/logic_test/datetime:885,SELECT d::timestamp FROM u WHERE a = 123,23094,47051
+testdata/logic_test/array:464,SELECT b FROM a,7590,11265
+testdata/logic_test/where:52,"SELECT * FROM kv WHERE (k,v) IN (SELECT * FROM kv)",29260,51794
+testdata/logic_test/tuple:519,"SELECT * FROM uvw WHERE (u, v, w) != (1, 2, 3) ORDER BY u, v, w",50480,66536
+testdata/logic_test/rename_table:145,SELECT * FROM test2.t2,5688,8694
+testdata/logic_test/collatedstring_index2:158,"SELECT b, a FROM t ORDER BY b, a",12787,19755
+testdata/logic_test/aggregate:120,"SELECT count_rows() FROM generate_series(1,100)",7464,18965
+testdata/logic_test/aggregate:753,"SELECT variance(x), variance(y::decimal), round(variance(z), 14) FROM xyz",29354,64591
+testdata/logic_test/update:298,SELECT * FROM lots,10304,13072
+testdata/logic_test/select:278,SELECT * FROM xyzw ORDER BY y OFFSET 1 LIMIT 1,12436,20014
+testdata/logic_test/schema_change_in_txn:190,SELECT * FROM warehouse@bar,5761,9393
+testdata/logic_test/aggregate:551,"SELECT min(k), max(k), min(v), max(v) FROM kv WHERE k > 8",44270,64356
+testdata/logic_test/aggregate:576,SELECT jsonb_agg(s) FROM kv WHERE s IS NULL,25505,43976
+testdata/logic_test/tuple:831,"SELECT (x).e, (x).f, (x).g FROM (   SELECT ((1,'2',true) AS e,f,g) AS x FROM tb )",16518,45337
+testdata/logic_test/suboperators:188,SELECT * FROM abc WHERE a > ANY(SELECT a FROM abc WHERE b = 20) OR b IS NULL,49625,178100
+testdata/logic_test/schema_change_in_txn:136,SELECT * FROM test.stock@idx_quantity,12843,21145
+testdata/logic_test/collatedstring_index1:74,"SELECT a, b FROM t ORDER BY a, b",17154,17839
+testdata/logic_test/multi_statement:37,SELECT * FROM kv,4942,7976
+testdata/logic_test/aggregate:556,"SELECT array_agg(k), array_agg(s) FROM (SELECT k, s FROM kv ORDER BY k)",27412,38267
+testdata/logic_test/srfs:648,"SELECT * FROM generate_subscripts(ARRAY[3,2,1], -1, false)",12013,15620
+testdata/logic_test/union:193,SELECT * FROM (SELECT * FROM (VALUES (1)) a LEFT JOIN (VALUES (1) UNION VALUES (2)) b on a.column1 =,18346,44645
+testdata/logic_test/subquery:255,SELECT 1 IN (SELECT x FROM xyz ORDER BY x DESC),17514,30777
+testdata/logic_test/ordinality:31,SELECT max(ordinality) FROM foo WITH ORDINALITY,16872,35421
+testdata/logic_test/join:107,SELECT * FROM onecolumn AS a NATURAL JOIN onecolumn_w as b,11939,26477
+testdata/logic_test/join:872,SELECT * FROM xyu RIGHT OUTER JOIN xyv ON xyu.x = xyv.x AND xyu.y = xyv.y AND xyu.x = 1 AND xyu.y < ,61082,118629
+testdata/logic_test/join:945,SELECT * FROM l LEFT OUTER JOIN r USING(a) WHERE a = 2,48479,68644
+testdata/logic_test/subquery:270,SELECT * FROM xyz WHERE x = (SELECT max(x) FROM xyz WHERE EXISTS(SELECT * FROM xyz WHERE z=x+3)),77091,95287
+testdata/logic_test/select_index_flags:51,SELECT * FROM abcd@bcd WHERE a >= 20 AND a <= 30,32050,36437
+testdata/logic_test/select:522,SELECT * FROM a WHERE y > 1,17705,24116
+testdata/logic_test/select:529,SELECT * FROM a WHERE x > 1 AND x < 3,26080,33768
+testdata/logic_test/rename_view:43,SELECT * FROM new_v,21718,22418
+testdata/logic_test/datetime:434,"SELECT k, extract(element, input::timestamptz) = extract_result, extract(element, input::timestamptz",26988,45311
+testdata/logic_test/suboperators:92,"SELECT * FROM abc WHERE a = ANY(ARRAY[4, 5])",22109,27018
+testdata/logic_test/rename_index:99,SELECT * FROM users@pk,6469,9737
+testdata/logic_test/family:62,SELECT * FROM abcd,6951,10043
+testdata/logic_test/delete:82,SELECT * FROM unindexed,5552,9016
+testdata/logic_test/conditional:59,"SELECT a, NULLIF(a, 2), IF(a = 2, NULL, a) FROM t ORDER BY a",24383,51298
+testdata/logic_test/aggregate:51,SELECT jsonb_agg(v) FROM kv,13529,24748
+testdata/logic_test/join:853,SELECT * FROM xyu INNER JOIN xyv ON xyu.x = xyv.x AND xyu.y = xyv.y WHERE xyu.x = 1 AND xyu.y < 10,74771,152768
+testdata/logic_test/aggregate:706,SELECT min(w) FROM xyz,28459,55505
+testdata/logic_test/upsert:269,"SELECT * FROM abc ORDER BY (a, b, c)",18010,19305
+testdata/logic_test/subquery:326,"SELECT * FROM (VALUES (1, 2, 3), (4, 5, 6)) AS foo (foo1, foo2, foo3)",6179,13800
+testdata/logic_test/join:318,"SELECT o.x, t.y FROM onecolumn o LEFT OUTER JOIN twocolumn t ON (o.x=t.x AND t.x=44)",37544,78943
+testdata/logic_test/insert:80,SELECT * FROM kv2,5671,8612
+testdata/logic_test/alias_types:50,SELECT reverse(b) FROM aliases ORDER BY a,13989,29136
+testdata/logic_test/alias_types:57,SELECT length(b::BYTES) FROM aliases ORDER BY a,15534,31290
+testdata/logic_test/tuple:580,"SELECT * FROM uvw WHERE (u, v, w) >= (1, NULL, 3) ORDER BY u, v, w",43861,58961
+testdata/logic_test/join:80,SELECT * FROM onecolumn AS a(x) RIGHT OUTER JOIN onecolumn AS b(y) ON a.x = b.y,20533,49863
+testdata/logic_test/join:997,SELECT * FROM foo JOIN bar USING (b),30030,48514
+testdata/logic_test/show_trace:229,"SELECT operation, regexp_replace(regexp_replace(message, 'wall_time:\d+', 'wall_time:...'), '\d\d\d\",24083,55171
+testdata/logic_test/parallel_stmts:147,"SELECT k, v FROM kv ORDER BY k",8934,9976
+testdata/logic_test/json:137,"SELECT bar FROM foo WHERE bar ?& ARRAY['a','b']",19948,26852
+testdata/logic_test/select_index:595,SELECT * FROM abc WHERE (c IS NULL OR c=2) AND a>0,50746,59631
+testdata/logic_test/select:580,SELECT * FROM b,6740,9784
+testdata/logic_test/srfs:585,"SELECT * FROM generate_subscripts(ARRAY[3,2,1], 1, true)",7218,14061
+testdata/logic_test/upsert:228,SELECT * FROM abc,7193,11267
+testdata/logic_test/select_index:404,SELECT * FROM int WHERE a IS DISTINCT FROM 2,25797,34668
+testdata/logic_test/json:185,SELECT b FROM multiple,6332,9504
+testdata/logic_test/join:246,SELECT * FROM onecolumn AS a(x) FULL OUTER JOIN empty AS b(y) ON a.x = b.y ORDER BY a.x,23767,54854
+testdata/logic_test/aggregate:701,SELECT min(y) FROM xyz,28173,50009
+testdata/logic_test/aggregate:859,"SELECT bool_and(b), bool_or(b) FROM bools",15655,31133
+testdata/logic_test/subquery:175,"SELECT (1, 2) IN (SELECT a, b FROM abc WHERE false)",21881,41917
+testdata/logic_test/suboperators:142,"SELECT 1 = ANY(SELECT * FROM unnest(ARRAY[1.0, 1.1]))",15146,29736
+testdata/logic_test/distinct:93,SELECT DISTINCT y AS w FROM xyz ORDER by y,14079,22086
+testdata/logic_test/distinct:151,SELECT DISTINCT v FROM kv@idx WHERE v > 0,20272,34281
+testdata/logic_test/default:91,"SELECT a, b <= now(), c >= 0.0 FROM t WHERE a = 2",39228,58955
+testdata/logic_test/builtin_function:1267,"SELECT least(NULL, a, 5, NULL) FROM foo",11620,26918
+testdata/logic_test/update:237,SELECT * FROM abc,6423,9181
+testdata/logic_test/suboperators:316,"SELECT 1 < ALL(SELECT * FROM generate_series(1,3))",11561,23170
+testdata/logic_test/postgresjoin:1848,"SELECT * FROM (SELECT name, n as s2_n, 2 as s2_2 FROM t2) as s2 NATURAL FULL JOIN (SELECT name, n as",36551,64931
+testdata/logic_test/aggregate:36,"SELECT min(v), max(v), count(v), sum_int(1), avg(v), sum(v), stddev(v), variance(v), bool_and(v = 1)",81814,115906
+testdata/logic_test/uuid:22,SELECT * FROM u WHERE token < '63616665-6630-3064-6465-616462656564'::uuid,21453,27980
+testdata/logic_test/ordinal_references:52,SELECT sum(a) AS s FROM foo GROUP BY @1 ORDER BY s,15194,44435
+testdata/logic_test/limit:12,"SELECT generate_series FROM generate_series(1, 100) ORDER BY generate_series FETCH FIRST 5 ROWS ONLY",7172,14609
+testdata/logic_test/decimal:307,SELECT * FROM s@idx WHERE d = 10,25577,40035
+testdata/logic_test/collatedstring_index1:133,"SELECT b, a FROM t ORDER BY b, a",14238,19226
+testdata/logic_test/aggregate:631,"SELECT min(a), min(b), min(c), min(d) FROM abc",29239,36563
+testdata/logic_test/union:235,SELECT * FROM a UNION ALL SELECT * FROM b,9090,12714
+testdata/logic_test/suboperators:162,"SELECT 1 = ANY(SELECT * FROM unnest(ARRAY[2, NULL]))",13095,26184
+testdata/logic_test/select_index:516,SELECT a FROM t2 WHERE b = 2 OR ((b BETWEEN 2 AND 1) AND ((s != 'a') OR (s = 'a'))),72839,88143
+testdata/logic_test/select:284,SELECT * FROM xyzw LIMIT (random() * 0.0)::int OFFSET (random() * 0.0)::int,14580,25315
+testdata/logic_test/create_as:20,SELECT * FROM itemTypes,6337,11406
+testdata/logic_test/bytes:132,"SELECT b, b::STRING FROM t",9136,20574
+testdata/logic_test/union:168,SELECT v FROM uniontest WHERE k = 1 EXCEPT SELECT v FROM uniontest WHERE k = 2,43545,66749
+testdata/logic_test/show_trace:65,"SELECT operation, regexp_replace(message, 'wall_time:\d+', 'wall_time:...') as message   FROM [SHOW ",23569,51274
+testdata/logic_test/order_by:29,SELECT c FROM t ORDER BY c DESC,9486,12939
+testdata/logic_test/distinct:143,SELECT DISTINCT v FROM kv@idx,7494,14247
+testdata/logic_test/aggregate:384,"SELECT upper(s), count(DISTINCT s), count(DISTINCT upper(s)) FROM kv GROUP BY upper(s) HAVING count(",41175,72097
+testdata/logic_test/time:245,SELECT * FROM arrays,5764,9616
+testdata/logic_test/suboperators:157,"SELECT 1 = ANY(SELECT * FROM unnest(ARRAY[1, NULL]))",13206,27154
+testdata/logic_test/postgres_jsonb:99,SELECT test_json ->> 'field6' FROM test_jsonb WHERE json_type = 'object',26743,46200
+testdata/logic_test/order_by:43,"SELECT a, b FROM t ORDER BY b DESC",11036,15054
+testdata/logic_test/delete:94,SELECT * FROM unindexed,5328,8866
+testdata/logic_test/collatedstring_index1:41,"SELECT b, a FROM t ORDER BY b, a",12273,18917
+testdata/logic_test/uuid:65,SELECT token FROM u WHERE token=b'cafef00ddeadbeef',22273,30991
+testdata/logic_test/select:414,"SELECT (1, NULL::int) IN (SELECT * FROM (VALUES (1, 1)) AS t(a, b))",15781,44819
+testdata/logic_test/aggregate:711,"SELECT min(x) FROM xyz WHERE x in (0, 4, 7)",47083,83330
+testdata/logic_test/srfs:66,"SELECT * FROM PG_CATALOG.generate_series(1, 3)",4841,8410
+testdata/logic_test/select:35,SELECT * FROM abc,6608,8298
+testdata/logic_test/limit:139,"SELECT k, v FROM t ORDER BY k LIMIT (SELECT count(*)-3 FROM t) OFFSET (SELECT count(*)-5 FROM t)",49525,114688
+testdata/logic_test/join:254,SELECT * FROM onecolumn AS a FULL OUTER JOIN empty AS b USING(x) ORDER BY x,18972,55022
+testdata/logic_test/rows_from:3,"SELECT * FROM ROWS FROM (generate_series(1,2), generate_series(4,8))",6264,11808
+testdata/logic_test/insert:160,"SELECT v, k FROM kv5@a",8966,9411
+testdata/logic_test/uuid:15,SELECT * FROM u ORDER BY token,9436,11513
+testdata/logic_test/union:173,SELECT v FROM uniontest WHERE k = 1 EXCEPT ALL SELECT v FROM uniontest WHERE k = 2,41178,66570
+testdata/logic_test/truncate:34,SELECT * FROM kview,20268,19900
+testdata/logic_test/select_index:56,SELECT k FROM tab0 WHERE (a IN (6) AND a > 6) OR b >= 4,41407,46696
+testdata/logic_test/select:84,SELECT a+b+c AS foo FROM abc,14360,28734
+testdata/logic_test/select:162,SELECT test.public.kv.* FROM test.kv,5780,8259
+testdata/logic_test/aggregate:197,"SELECT count(*), k FROM kv GROUP BY k",17233,26053
+testdata/logic_test/suboperators:207,"SELECT * FROM abc WHERE a = ANY(SELECT * FROM unnest(ARRAY[1, NULL]))",27076,50668
+testdata/logic_test/select:516,SELECT * FROM a WHERE x > 1,17268,22794
+testdata/logic_test/postgres_jsonb:69,SELECT test_json -> 9 FROM test_jsonb WHERE json_type = 'array',26861,54003
+testdata/logic_test/distinct_on:53,"SELECT DISTINCT ON (y, x, z) x FROM xyz",14819,25036
+testdata/logic_test/create_as:57,SELECT * FROM unionstock ORDER BY quantity LIMIT 1,9792,22310
+testdata/logic_test/aggregate:299,"SELECT count(*), upper(s) FROM kv GROUP BY upper(s)",20049,36986
+testdata/logic_test/bytes:140,"SELECT b, b::STRING FROM t",9334,20662
+testdata/logic_test/uuid:27,SELECT * FROM u WHERE token <= '63616665-6630-3064-6465-616462656564'::uuid ORDER BY token,24171,31029
+testdata/logic_test/upsert:394,SELECT * FROM issue_13962,6808,11117
+testdata/logic_test/suboperators:216,"SELECT * FROM abc WHERE a = ANY(SELECT * FROM unnest(ARRAY[NULL, NULL]))",25508,47916
+testdata/logic_test/select_table_alias:14,SELECT * FROM abc,6692,8266
+testdata/logic_test/select_index:536,SELECT w FROM t3 WHERE v > 0 AND v < 100 ORDER BY v,39852,58314
+testdata/logic_test/decimal:276,SELECT * FROM s@idx WHERE d = 0,25176,35997
+testdata/logic_test/typing:61,SELECT * FROM s WHERE x > b'\x00',18163,24047
+testdata/logic_test/select_index:261,"SELECT k, v FROM str WHERE v LIKE 'ABC%'",18123,23098
+testdata/logic_test/select:306,SELECT xyzw.y FROM test.xyzw@foo WHERE z = 3,22367,36607
+testdata/logic_test/computed:134,"SELECT c, d FROM x",8209,11389
+testdata/logic_test/schema_change_in_txn:179,SELECT * FROM warehouse@bar,9002,15046
+testdata/logic_test/limit:101,"SELECT k FROM (SELECT k, v FROM t ORDER BY v LIMIT 4)",17386,27154
+testdata/logic_test/join:830,"SELECT * FROM xyu LEFT OUTER JOIN xyv USING(x, y) WHERE x > 2",45036,90723
+testdata/logic_test/collatedstring_index2:28,"SELECT a, b FROM t ORDER BY a, b",11972,15378
+testdata/logic_test/suboperators:96,"SELECT * FROM abc WHERE a = ANY(ARRAY[1, NULL])",24448,27404
+testdata/logic_test/rename_table:18,SELECT * FROM kv,5171,8555
+testdata/logic_test/aggregate:641,"SELECT avg(b), sum(b), avg(d), sum(d) FROM abc",25590,39682
+testdata/logic_test/upsert:427,SELECT * FROM issue_14052_2;,6879,8250
+testdata/logic_test/suboperators:122,"SELECT 1 = ANY(SELECT * FROM generate_series(2,4))",12423,25321
+testdata/logic_test/rename_view:153,SELECT * FROM test2.v,18462,20830
+testdata/logic_test/float:76,SELECT * FROM i WHERE f = 0,24414,42244
+testdata/logic_test/array:73,"SELECT NULL::INT[] IS DISTINCT FROM NULL, ARRAY[1,2,3] IS DISTINCT FROM NULL",16229,39811
+testdata/logic_test/aggregate:378,"SELECT s, count(*) FROM kv GROUP BY s HAVING count(*) > 1",28125,50277
+testdata/logic_test/srfs:623,"SELECT * FROM generate_subscripts(ARRAY[3,2,1], 2, true)",7164,15739
+testdata/logic_test/tuple:297,"SELECT (1, 2) > (1.0, 2.0) AS r   FROM tb",14860,33638
+testdata/logic_test/select_table_alias:52,"SELECT foo1, foo.foo1, b, foo.c FROM abc AS foo (foo1)",12618,11789
+testdata/logic_test/select:618,"SELECT 1, * FROM nocols",6031,15154
+testdata/logic_test/schema_change_in_txn:383,SELECT * FROM children,7765,10989
+testdata/logic_test/postgres_jsonb:24,SELECT test_json -> 'x' FROM test_jsonb WHERE json_type = 'scalar',27703,48209
+testdata/logic_test/join:898,"SELECT * FROM (SELECT * FROM xyu ORDER BY x, y) AS xyu FULL OUTER JOIN (SELECT * FROM xyv ORDER BY x",52456,98765
+testdata/logic_test/select_index:268,"SELECT k, v FROM str WHERE v LIKE 'ABC%Z'",19550,25572
+testdata/logic_test/select_index:376,SELECT * FROM bool2 WHERE a IS NOT TRUE,19328,28549
+testdata/logic_test/decimal:181,SELECT * FROM s WHERE d = 'NaN',22938,38713
+testdata/logic_test/select:419,"SELECT (2, NULL::int) IN (SELECT * FROM (VALUES (1, 1)) AS t(a, b))",15999,45284
+testdata/logic_test/optimizer:54,SELECT * FROM t WHERE EXISTS(SELECT * FROM xy WHERE x=t.k),60015,50251
+testdata/logic_test/join:178,SELECT * FROM empty AS a CROSS JOIN onecolumn AS b,11906,27313
+testdata/logic_test/distinct:84,"SELECT DISTINCT y AS w, z FROM xyz ORDER by z, w",14968,23136
+testdata/logic_test/collatedstring_uniqueindex1:44,"SELECT b, a FROM t ORDER BY b, a",14403,16533
+testdata/logic_test/schema_change_in_txn:214,SELECT * FROM hood,8161,12250
+testdata/logic_test/order_by:101,SELECT b FROM t ORDER BY a DESC,11687,13902
+testdata/logic_test/rows_from:47,"SELECT * FROM ROWS FROM (current_user, generate_series(1,2))",6511,11602
+testdata/logic_test/suboperators:117,"SELECT 1 = ANY(SELECT * FROM generate_series(1,3))",12385,25851
+testdata/logic_test/serializable_eager_restart:36,SELECT * FROM t,5932,10143
+testdata/logic_test/select_index:110,"SELECT * FROM t12022@i WHERE (c1, c2) < (2, true) ORDER BY (c1, c2);",40706,58505
+testdata/logic_test/parallel_stmts:173,"SELECT k, v FROM kv ORDER BY k",9086,9968
+testdata/logic_test/ordinality:3,"SELECT * FROM (VALUES ('a'), ('b')) WITH ORDINALITY AS x(name, i)",4612,10527
+testdata/logic_test/ordinality:10,"SELECT ordinality FROM (VALUES ('a'), ('b')) WITH ORDINALITY",5573,14488
+testdata/logic_test/union:145,SELECT v FROM uniontest WHERE k = 1 UNION ALL SELECT v FROM uniontest WHERE k = 2,41513,65080
+testdata/logic_test/subquery:417,SELECT x FROM xyz WHERE x = 7 LIMIT (SELECT x FROM xyz WHERE x = 1),39151,62084
+testdata/logic_test/decimal:95,SELECT * FROM t2 ORDER BY d,8591,10400
+testdata/logic_test/srfs:618,"SELECT * FROM generate_subscripts(ARRAY[3,2,1], 2, false)",7247,14827
+testdata/logic_test/tuple:276,"SELECT 1 IN (2, NULL) AS r   FROM tb",9906,30225
+testdata/logic_test/aggregate:696,SELECT min(x) FROM xyz,28241,50064
+testdata/logic_test/where:39,SELECT * FROM kv WHERE v IN (6),18531,21690
+testdata/logic_test/select_table_alias:28,SELECT * FROM abc AS foo (foo1),6344,8614
+testdata/logic_test/select:464,"SELECT (NULL::int, NULL::int) NOT IN (SELECT * FROM (VALUES (1, 1)) AS t(a, b))",16353,47585
+testdata/logic_test/no_primary_key:57,SELECT rowid FROM t WHERE a = 10,24203,37026
+testdata/logic_test/where:21,SELECT * FROM kv WHERE True,6417,9431
+testdata/logic_test/serial:32,"SELECT count(DISTINCT a), count(DISTINCT b), count(DISTINCT c) FROM serial",22664,41602
+testdata/logic_test/fk:377,SELECT count(*) FROM delivery,9568,19827
+testdata/logic_test/select_search_path:98,SELECT count(*) FROM words,9065,17176
+testdata/logic_test/limit:132,"SELECT k, v FROM t ORDER BY k OFFSET (SELECT count(*)-3 FROM t)",33670,63304
+testdata/logic_test/default:56,"SELECT a, b <= now(), c >= 0.0 FROM t",28547,37146
+testdata/logic_test/tuple:873,"SELECT (t.*).* FROM t ORDER BY 1,2",12838,19913
+testdata/logic_test/select:295,"SELECT z, y FROM xyzw@foo",9576,11809
+testdata/logic_test/insert:395,SELECT * FROM insert_t,7715,11980
+testdata/logic_test/datetime:930,"SELECT a, b, c FROM tz ORDER BY a",12884,13729
+testdata/logic_test/aggregate:531,"SELECT count((k, v)) FROM kv OFFSET 1",16908,42720
+testdata/logic_test/computed:233,"SELECT a, b, c, d FROM x",10387,10693
+testdata/logic_test/aggregate:15,"SELECT min(1), max(1), count(1), sum_int(1), avg(1), sum(1), stddev(1), variance(1), bool_and(true),",52230,84930
+testdata/logic_test/update:382,SELECT * FROM tu,6602,8680
+testdata/logic_test/tuple:676,"SELECT ((2, 2) AS a, b) < ((1, 1) AS c, d) AS r       ,((2, 2) AS a, b) < (1, 2) AS s       ,(2, 2) ",32151,66077
+testdata/logic_test/subquery:340,SELECT * FROM (SELECT * FROM xyz) AS foo WHERE x < 7,22429,23862
+testdata/logic_test/serializable_eager_restart:57,SELECT * FROM t,5006,10050
+testdata/logic_test/select_index:81,"SELECT * FROM t12022@i WHERE (c1, c2) > (1, false) ORDER BY (c1, c2);",37361,54629
+testdata/logic_test/distinct_on:229,"SELECT DISTINCT ON(min(a), max(b), min(c)) max(c) FROM abc",36207,55914
+testdata/logic_test/aggregate:586,"SELECT avg(k::decimal), avg(v::decimal), sum(k::decimal), sum(v::decimal) FROM kv",29566,58951
+testdata/logic_test/array:475,SELECT b FROM a,7634,10943
+testdata/logic_test/alter_table:364,SELECT * FROM t,10344,13745
+testdata/logic_test/views:146,SELECT * FROM test.v6,34048,30222
+testdata/logic_test/update:290,SELECT * FROM lots,10447,13177
+testdata/logic_test/tuple:667,"SELECT ((1, 2, 'hello', NULL, NULL) AS a1, b2, c3, d4, e5) AS r,        ((true, NULL, (false, 6.6, f",20538,39053
+testdata/logic_test/prepare:227,SELECT * FROM f,8172,12383
+testdata/logic_test/pgoidtype:279,SELECT * FROM o WHERE a <= 4,18070,23535
+testdata/logic_test/limit:73,"SELECT k, v FROM t ORDER BY v LIMIT (1+4) OFFSET 1",15007,27804
+testdata/logic_test/aggregate:615,SELECT max(v) FROM kv WHERE k=100,36696,73103
+testdata/logic_test/postgres_jsonb:79,SELECT test_json ->> 6 FROM test_jsonb WHERE json_type = 'array',30288,48795
+testdata/logic_test/aggregate:835,SELECT x > (SELECT avg(0)) FROM xyz LIMIT 1,21341,62307
+testdata/logic_test/suboperators:183,SELECT * FROM abc WHERE a > ANY(SELECT a FROM abc WHERE b = 30),38567,76620
+testdata/logic_test/datetime:70,SELECT * FROM u ORDER BY a,11511,11840
+testdata/logic_test/array:755,SELECT b FROM a,6705,12410
+testdata/logic_test/tuple:747,"SELECT ((          (           (((1, '2', 3) AS a, b, c),            ((4,'5') AS a, b), 		   (ROW(6)",16280,53237
+testdata/logic_test/alter_table:458,SELECT * FROM add_default,5758,10417
+testdata/logic_test/alter_table:501,"SELECT a,b FROM add_default WHERE e > d AND e - d < interval '10s'",40693,50989
+testdata/logic_test/datetime:225,SELECT count(DISTINCT (v)) FROM kv,13825,25130
+testdata/logic_test/aggregate:1163,SELECT 123 FROM kv ORDER BY max(v),27487,49826
+testdata/logic_test/upsert:281,"SELECT * FROM abc ORDER BY (a, b, c)",26270,20699
+testdata/logic_test/subquery:333,"SELECT * FROM (VALUES (1, 2, 3), (4, 5, 6)) AS foo (foo1, foo2)",6162,13591
+testdata/logic_test/subquery:368,"SELECT * FROM (SELECT * FROM xyz AS moo (moo1, moo2, moo3) ORDER BY moo1) as foo (foo1) WHERE foo1 <",25848,32310
+testdata/logic_test/select:61,SELECT * FROM abc WHERE a = NULL,15489,15816
+testdata/logic_test/postgres_jsonb:131,SELECT (test_json->>'field3') IS NULL AS expect_true FROM test_jsonb WHERE json_type = 'object';,31711,58045
+testdata/logic_test/optimizer:82,SELECT * FROM tview,20784,20655
+testdata/logic_test/show_trace:41,"SELECT operation, message FROM [SHOW KV TRACE FOR SESSION] WHERE message NOT LIKE '%Z/%'   AND tag N",20065,38780
+testdata/logic_test/select_index:273,"SELECT k, v FROM str WHERE v SIMILAR TO 'ABC_*'",23376,31256
+testdata/logic_test/datetime:387,"SELECT k, extract(element, input::timestamp) = extract_result, extract(element, input::timestamp) FR",28148,47450
+testdata/logic_test/serializable_eager_restart:21,SELECT * FROM t,4966,9553
+testdata/logic_test/check_constraints:192,SELECT * FROM t5,6861,8599
+testdata/logic_test/storing:30,"SELECT a, b, c, d FROM t@b_idx",10917,10805
+testdata/logic_test/aggregate:773,SELECT stddev(x) FROM xyz WHERE x = 1,28746,106102
+testdata/logic_test/uuid:60,SELECT token FROM u WHERE token='urn:uuid:63616665-6630-3064-6465-616462656562',27668,36288
+testdata/logic_test/truncate:49,SELECT * FROM kview,22317,19952
+testdata/logic_test/postgres_jsonb:114,SELECT test_json ->> 2 FROM test_jsonb WHERE json_type = 'object',26504,49869
+testdata/logic_test/poison_after_push:84,SELECT * FROM t ORDER BY id,7271,9636
+testdata/logic_test/array:659,SELECT b FROM a,5979,10639
+testdata/logic_test/create_as:45,SELECT * FROM unionstock ORDER BY quantity,8580,18048
+testdata/logic_test/aggregate:449,"SELECT v, count(k) FROM kv GROUP BY v ORDER BY v DESC",21246,30272
+testdata/logic_test/where:116,"SELECT * FROM ab WHERE (a, b) IN ((1, 10), (4, NULL), (NULL, 50))",38403,47021
+testdata/logic_test/typing:132,SELECT ts FROM untyped WHERE ts != '2015-09-18 00:00:00',34369,40087
+testdata/logic_test/poison_after_push:49,SELECT * FROM t ORDER BY id,7487,10482
+testdata/logic_test/json:494,SELECT true FROM x WHERE j->'a' @> '2'::JSONB,24813,38314
+testdata/logic_test/join:198,SELECT * FROM onecolumn AS a(x) LEFT OUTER JOIN empty AS b(y) ON a.x = b.y ORDER BY a.x,23474,52930
+testdata/logic_test/inet:873,SELECT host(max('192.168.0.2/24'::INET)) FROM (VALUES (1)) AS t(x),19050,45230
+testdata/logic_test/update:218,SELECT * FROM abc,6489,9458
+testdata/logic_test/system:29,SELECT * FROM system.namespace,162009,173304
+testdata/logic_test/order_by:57,"SELECT a, b FROM t ORDER BY b DESC LIMIT 2",12229,21210
+testdata/logic_test/delete:34,SELECT * FROM kview,22610,24405
+testdata/logic_test/srfs:638,"SELECT * FROM generate_subscripts(ARRAY[3,2,1], 0, true)",7016,15906
+testdata/logic_test/parallel_stmts:223,"SELECT k, v FROM kv ORDER BY k",9020,9759
+testdata/logic_test/aggregate:655,SELECT sum(a) FROM intervals,10915,20544
+testdata/logic_test/views:70,SELECT * FROM v7 ORDER BY x LIMIT 1,41852,52847
+testdata/logic_test/subquery:459,"SELECT * FROM z WHERE CAST(COALESCE((SELECT 'a'), (SELECT 'a')) AS bytea) < 'a'",28645,45358
+testdata/logic_test/parallel_stmts:287,"SELECT k, v FROM kv ORDER BY k",8589,10366
+testdata/logic_test/order_by:241,SELECT a FROM abc ORDER BY a DESC,13631,14767
+testdata/logic_test/aggregate:746,"SELECT max(x) FROM xyz WHERE (z, y) = (3.0, 2)",57639,92753
+testdata/logic_test/join:411,SELECT * FROM onecolumn JOIN twocolumn ON twocolumn.x = onecolumn.x AND onecolumn.x IN (SELECT x FRO,61684,122425
+testdata/logic_test/array:347,"SELECT k FROM t WHERE k = ANY ARRAY[2,4]",20882,28934
+testdata/logic_test/aggregate:768,"SELECT stddev(x), stddev(y::decimal), round(stddev(z), 14) FROM xyz",29105,65266
+testdata/logic_test/zero:181,"SELECT * FROM (VALUES (-0.0::DECIMAL), (-0::DECIMAL), (0::DECIMAL), (-0.00::DECIMAL)) ORDER BY 1",8219,18874
+testdata/logic_test/subquery:422,SELECT x FROM xyz ORDER BY x OFFSET (SELECT x FROM xyz WHERE x = 1),31566,48556
+testdata/logic_test/join:747,SELECT x FROM t1 NATURAL JOIN (SELECT * FROM t2),26897,65854
+testdata/logic_test/distinct_on:248,SELECT DISTINCT ON(min(x)) min(x) FROM xyz GROUP BY y HAVING min(x) = 1,35619,66382
+testdata/logic_test/distinct_on:286,SELECT DISTINCT ON (1) x FROM xyz,7772,16712
+testdata/logic_test/array:903,SELECT b FROM a,7540,10119
+testdata/logic_test/select_index:465,SELECT * FROM noncover WHERE c > 0 ORDER BY c DESC,28192,39270
+testdata/logic_test/join:884,"SELECT * FROM (SELECT * FROM xyu ORDER BY x, y) AS xyu LEFT OUTER JOIN (SELECT * FROM xyv ORDER BY x",63764,114039
+testdata/logic_test/join:891,"SELECT * FROM (SELECT * FROM xyu ORDER BY x, y) AS xyu RIGHT OUTER JOIN (SELECT * FROM xyv ORDER BY ",59757,106548
+testdata/logic_test/family:34,SELECT * FROM abcd,7380,13090
+testdata/logic_test/distinct:68,"SELECT DISTINCT y, z FROM xyz ORDER BY y, z",14104,22820
+testdata/logic_test/uuid:104,SELECT token::string FROM u WHERE token=b'cafef00ddeadbeef',22168,40937
+testdata/logic_test/order_by:312,SELECT x FROM nan ORDER BY x,8224,11536
+testdata/logic_test/json_builtins:411,"SELECT json_build_object(a,3) FROM (SELECT 1 AS a, 2 AS b) r",9429,23451
+testdata/logic_test/join:96,SELECT * FROM onecolumn AS a NATURAL RIGHT OUTER JOIN onecolumn AS b,15600,41262
+testdata/logic_test/join:326,"SELECT * FROM (SELECT x, 2 two FROM onecolumn) NATURAL FULL JOIN (SELECT x, y+1 plus1 FROM twocolumn",37535,80394
+testdata/logic_test/views:112,SELECT y FROM v7 ORDER BY x LIMIT 1,42829,55625
+testdata/logic_test/select:66,"SELECT *,* FROM abc",12051,11493
+testdata/logic_test/join:1032,"SELECT * FROM foo, bar WHERE foo.b = bar.b",30097,52055
+testdata/logic_test/builtin_function:1272,"SELECT least(NULL, NULL, NULL, a, -1) FROM foo",12401,28932
+testdata/logic_test/aggregate:516,"SELECT count(*) FROM kv a, kv b",17144,38897
+testdata/logic_test/crdb_internal:55,SELECT * FROM testdb.foo,5444,9756
+testdata/logic_test/aggregate:867,"SELECT bool_and(b), bool_or(b) FROM bools",15737,28724
+testdata/logic_test/select:359,SELECT a FROM MaxIntTest WHERE a = 9223372036854775807,17537,22704
+testdata/logic_test/join:1018,SELECT * FROM foo JOIN bar ON foo.b = bar.b,27637,51359
+testdata/logic_test/float:67,SELECT * FROM i WHERE f = 0,21150,35198
+testdata/logic_test/distinct_on:148,SELECT DISTINCT ON (c) a FROM abc,13053,20538
+testdata/logic_test/distinct_on:241,SELECT DISTINCT ON(y) min(x) FROM xyz GROUP BY y,25025,33573
+testdata/logic_test/datetime:251,SELECT count(DISTINCT (v)) FROM kv,12559,23562
+testdata/logic_test/aggregate:1088,"SELECT x, max(y) FROM group_ord GROUP BY x ORDER BY x",19898,31854
+testdata/logic_test/tuple:33,"SELECT   (2, 2) < (1, 1) AS a,   (2, 2) < (1, 2) AS b,   (2, 2) < (1, 3) AS c,   (2, 2) < (2, 1) AS ",89470,142656
+testdata/logic_test/ordinality:36,"SELECT * FROM foo WITH ORDINALITY AS a, foo WITH ORDINALITY AS b",13903,20758
+testdata/logic_test/default:72,"SELECT a, b <= now(), c >= 0.0 FROM t WHERE a = 2",40637,61213
+testdata/logic_test/aggregate:1006,"SELECT to_hex(xor_agg(a)), xor_agg(c) FROM xor_bytes",20378,42446
+testdata/logic_test/join:404,SELECT * FROM (onecolumn CROSS JOIN twocolumn JOIN onecolumn AS a(b) ON a.b=twocolumn.x JOIN twocolu,48892,146188
+testdata/logic_test/statement_source:67,SELECT * FROM a ORDER BY b,6811,11719
+testdata/logic_test/srfs:18,"SELECT * FROM generate_series('2017-11-11 00:00:00'::TIMESTAMP, '2017-11-11 03:00:00'::TIMESTAMP, '1",5456,11077
+testdata/logic_test/select_table_alias:71,"SELECT * FROM abc AS foo (foo1, foo2) WHERE foo.c = 6",20986,26680
+testdata/logic_test/select_index:365,SELECT * FROM bool2 WHERE a IS NOT NULL,20593,22793
+testdata/logic_test/rename_database:80,SELECT * FROM kv,5153,8225
+testdata/logic_test/order_by:63,"SELECT DISTINCT c, b FROM t ORDER BY b DESC LIMIT 2",12797,27556
+testdata/logic_test/txn:105,SELECT * FROM kv,5312,13260
+testdata/logic_test/distinct_on:310,"SELECT y FROM (SELECT DISTINCT ON(y) x AS y, y AS x FROM xyz)",12934,25519
+testdata/logic_test/distinct_on:358,"SELECT DISTINCT ON (x, y, z) pk1 FROM (SELECT * FROM xyz WHERE x >= 2) ORDER BY x",38698,49951
+testdata/logic_test/collatedstring_constraint:82,SELECT b FROM c2 ORDER BY a,10471,13510
+testdata/logic_test/order_by:381,SELECT k FROM kv ORDER BY INDEX kv@foo,13416,16221
+testdata/logic_test/datetime:962,SELECT a FROM tz WHERE c = d::timestamp,21184,31458
+testdata/logic_test/select_index_flags:74,"SELECT c, d FROM abcd WHERE c >= 20 AND c < 40",38420,49426
+testdata/logic_test/ordinality:65,SELECT * FROM foo WITH ORDINALITY WHERE ordinality > 1 ORDER BY ordinality DESC,14621,56394
+testdata/logic_test/views:161,SELECT * FROM test.v7 ORDER BY x LIMIT 1,43698,50541
+testdata/logic_test/tuple:9,SELECT 1 IN (SELECT * FROM tb LIMIT 0),17571,35877
+testdata/logic_test/serial:273,"SELECT count(DISTINCT a), count(DISTINCT b), count(DISTINCT c) FROM serials",25154,39055
+testdata/logic_test/collatedstring:222,SELECT a FROM t ORDER BY t.a,10237,16439
+testdata/logic_test/aggregate:571,SELECT json_agg(s) FROM kv WHERE s IS NULL,25812,48261
+testdata/logic_test/subquery:311,"SELECT * FROM (VALUES (1, 'one'), (2, 'two'), (3, 'three')) AS foo",5439,15559
+testdata/logic_test/show_source:253,SELECT * FROM [SHOW TRACE FOR SESSION] LIMIT 0,7402,9050
+testdata/logic_test/rows_from:33,"SELECT * FROM ROWS FROM (generate_series(1,2), greatest(1,2,3,4))",7981,16541
+testdata/logic_test/optimizer:30,SELECT * FROM test.t ORDER BY 1-t.k,30673,34096
+testdata/logic_test/limit:40,"SELECT generate_series FROM generate_series(1, 100) ORDER BY generate_series FETCH FIRST (1 + 1) ROW",7115,15692
+testdata/logic_test/join:356,SELECT * FROM a RIGHT OUTER JOIN b ON a.i = b.i,21429,45092
+testdata/logic_test/show_trace:193,"SELECT operation, message FROM [SHOW KV TRACE FOR SESSION]",5812,7576
+testdata/logic_test/datetime:898,SELECT d::timestamp FROM u WHERE a = 123,22623,44711
+testdata/logic_test/aggregate:1047,"SELECT min(y), (b, a)  FROM ab, xy GROUP BY (x, (a, b))",34362,70419
+testdata/logic_test/collatedstring_index2:87,"SELECT b, a FROM t ORDER BY b, a",14350,18656
+testdata/logic_test/aggregate:721,SELECT min(y) FROM xyz WHERE x = 1,43123,84421
+testdata/logic_test/views:39,SELECT * FROM v1,19156,21821
+testdata/logic_test/tuple:321,"SELECT * FROM uvw ORDER BY u, v, w",14306,18435
+testdata/logic_test/join:174,SELECT * FROM onecolumn AS a(x) CROSS JOIN empty AS b(y),11723,26311
+testdata/logic_test/delete:127,"SELECT k, v FROM unindexed",7132,8678
+testdata/logic_test/select:263,SELECT * FROM xyzw ORDER BY x LIMIT 1,13097,18407
+testdata/logic_test/select:560,"SELECT x, x, y, x FROM a",10709,9050
+testdata/logic_test/datetime:952,SELECT a FROM tz WHERE c < d,18352,30637
+testdata/logic_test/array:353,"SELECT k FROM t WHERE k > ANY ARRAY[2,4]",21046,28525
+testdata/logic_test/where:110,"SELECT * FROM ab WHERE (a, b) IN ((1, 10), (3, 30), (4, 40))",36579,51739
+testdata/logic_test/select:131,SELECT lower(v) FROM kv,8244,19291
+testdata/logic_test/collatedstring_constraint:70,SELECT a FROM p ORDER BY a,7189,8965
+testdata/logic_test/txn:86,SELECT * FROM kv,5388,8828
+testdata/logic_test/suboperators:331,"SELECT 1 = ALL(SELECT * FROM unnest(ARRAY[NULL, NULL]))",12835,24959
+testdata/logic_test/select:72,"SELECT a,a,a,a FROM abc",12215,12992
+testdata/logic_test/aggregate:506,"SELECT count(DISTINCT (k, v)) FROM kv",15826,38969
+testdata/logic_test/join:478,SELECT x FROM (onecolumn JOIN othercolumn USING (x)) JOIN (onecolumn AS a JOIN othercolumn AS b USIN,31597,110643
+testdata/logic_test/collatedstring_uniqueindex1:31,"SELECT a, b FROM t ORDER BY a, b",14516,17800
+testdata/logic_test/datetime:86,"SELECT min(b), min(c), min(d), min(e) FROM u",34474,46927
+testdata/logic_test/srfs:569,"SELECT * FROM generate_subscripts(ARRAY[3,2,1], 1)",6830,12210
+testdata/logic_test/tuple:290,"SELECT (now(), 2) = (now() :: timestamp, 2) AS r   FROM tb",17967,41328
+testdata/logic_test/tuple:432,"SELECT * FROM uvw WHERE (u, v, w) > (2, 1, 1) ORDER BY u, v, w",42607,54854
+testdata/logic_test/suboperators:105,"SELECT * FROM abc WHERE a = ANY(ARRAY[NULL, NULL])",22617,29797
+testdata/logic_test/srfs:10,"SELECT * FROM generate_series(1, 3)",4835,8362
+testdata/logic_test/serial:251,"SELECT count(DISTINCT a), count(DISTINCT b), count(DISTINCT c) FROM smallbig",25012,39683
+testdata/logic_test/join:131,SELECT * FROM onecolumn AS a FULL OUTER JOIN othercolumn AS b USING(x) ORDER BY x,20219,50357
+testdata/logic_test/array:623,SELECT b FROM a,6736,11365
+testdata/logic_test/update:243,SELECT * FROM abc@d WHERE c = 9,22928,37288
+testdata/logic_test/select_table_alias:65,"SELECT * FROM abc AS foo (foo1, foo2) WHERE foo.foo2 = 2",21263,27557
+testdata/logic_test/join:785,"SELECT s, str1.s, str2.s FROM str1 LEFT OUTER JOIN str2 USING(s)",19702,42559
+testdata/logic_test/join:1064,"SELECT column1, column1+1 FROM   (SELECT * FROM     (VALUES (NULL, NULL)) AS t       NATURAL FULL OU",32801,76521
+testdata/logic_test/interleaved:126,SELECT * FROM p1_0,6700,8356
+testdata/logic_test/family:40,SELECT count(*) FROM abcd,11430,22999
+testdata/logic_test/select_index:477,SELECT * FROM noncover WHERE b = 5 AND b <> 5,31876,27519
+testdata/logic_test/parallel_stmts:326,"SELECT k, v FROM kv ORDER BY k",8636,10604
+testdata/logic_test/order_by:143,SELECT a FROM t ORDER BY (((a))),8936,13020
+testdata/logic_test/interleaved:122,SELECT * FROM p2,4993,7360
+testdata/logic_test/aggregate:581,"SELECT avg(k), avg(v), sum(k), sum(v) FROM kv",26160,37868
+testdata/logic_test/select:409,SELECT NULL::int IN (SELECT * FROM (VALUES (1)) AS t(a)),12351,28027
+testdata/logic_test/postgresjoin:1869,"SELECT * FROM (SELECT name, n as s1_n FROM t1) as s1 NATURAL FULL JOIN (SELECT * FROM (SELECT name, ",52204,81243
+testdata/logic_test/optimizer:114,SELECT * FROM test.t,7812,7728
+testdata/logic_test/join:289,SELECT * FROM twocolumn AS a JOIN twocolumn AS b ON a.x = a.y,28988,55234
+testdata/logic_test/array:691,SELECT count(b) FROM a,11295,23246
+testdata/logic_test/aggregate:477,"SELECT count(*), count(k), count(kv.v) FROM kv",23296,34624
+testdata/logic_test/order_by:417,"SELECT a, b, c FROM abc2 ORDER BY INDEX abc2@bc",21703,20444
+testdata/logic_test/drop_database:127,SELECT * FROM d2.v3,44335,38824
+testdata/logic_test/decimal:126,SELECT * FROM t2 WHERE d = 'Infinity' and v = 'Infinity',37032,43759
+testdata/logic_test/create_as:71,SELECT * FROM smtng.something ORDER BY 1 LIMIT 1,9411,17876
+testdata/logic_test/tuple:239,"SELECT 'foo' IN (x, 'zzz') AS r FROM (SELECT 'foo' AS x FROM tb)",14705,34831
+testdata/logic_test/select_index:437,"SELECT a, d FROM noncover WHERE b=2",27962,42447
+testdata/logic_test/order_by:424,"SELECT a, b, c FROM abc2 ORDER BY INDEX abc2@bc DESC",19813,20932
+testdata/logic_test/aggregate:596,SELECT avg(k) * 2.0 + max(v)::DECIMAL FROM kv,32314,64605
+testdata/logic_test/subquery:170,"SELECT (1, 2) IN (SELECT a, b FROM abc)",18988,43298
+testdata/logic_test/collatedstring_uniqueindex2:77,"SELECT a, b FROM t ORDER BY a, b",14233,18125
+testdata/logic_test/views:271,SELECT * FROM v6,31449,30160
+testdata/logic_test/ordinality:26,SELECT * FROM foo WITH ORDINALITY LIMIT 1,6939,13548
+testdata/logic_test/float:16,SELECT * FROM p WHERE f = 'NaN',23568,33546
+testdata/logic_test/datetime:958,SELECT a FROM tz WHERE b = c::timestamp,21117,31016
+testdata/logic_test/limit:21,"SELECT generate_series FROM generate_series(1, 100) ORDER BY generate_series FETCH FIRST ROW ONLY;",6889,14156
+testdata/logic_test/join:666,SELECT *   FROM (SELECT * FROM pairs RIGHT JOIN square ON b = sq AND a > 1 AND n < 6)  WHERE (a IS N,87578,168835
+testdata/logic_test/tuple:691,"SELECT ((((1, 2) AS a, b), 'value') AS c, d) = ((((1, 2) AS e, f), 'value') AS g, h) AS nnnn       ,",295021,376577
+testdata/logic_test/aggregate:851,"SELECT bool_and(b), bool_or(b) FROM bools",15846,28476
+testdata/logic_test/select:301,SELECT z FROM test.xyzw@foo WHERE y = 5,22805,38059
+testdata/logic_test/select:480,"SELECT (NULL::int, 1) IN (SELECT * FROM (VALUES (1, 1)) AS t(a, b) WHERE a > 1)",25127,61231
+testdata/logic_test/aggregate:872,SELECT concat_agg(s) FROM (SELECT s FROM kv ORDER BY k),19963,31661
+testdata/logic_test/insert:15,SELECT * FROM kv,5494,9875
+testdata/logic_test/computed:567,SELECT d FROM x,7344,11257
+testdata/logic_test/aggregate:46,SELECT json_agg(v) FROM kv,13415,24510
+testdata/logic_test/srfs:36,"SELECT * FROM generate_series('2017-11-11 00:00:00'::TIMESTAMP, '2017-11-11 03:00:00'::TIMESTAMP, '-",5433,12819
+testdata/logic_test/ordinality:20,SELECT * FROM foo WITH ORDINALITY,5489,9227
+testdata/logic_test/default:45,"SELECT a, b <= now(), c >= 0.0 FROM t",24382,38290
+testdata/logic_test/aggregate:26,SELECT json_agg(1) FROM kv,11707,30247
+testdata/logic_test/update:365,SELECT * FROM kv,5411,8239
+testdata/logic_test/subquery:265,SELECT * FROM xyz WHERE x = (SELECT max(x) FROM xyz),44206,65894
+testdata/logic_test/select_table_alias:21,SELECT * FROM abc AS foo,6523,8549
+testdata/logic_test/select:188,SELECT FOO.k FROM kv AS foo WHERE foo.k = 'a',22351,33926
+testdata/logic_test/join:143,"SELECT x AS s, a.x, b.x FROM onecolumn AS a FULL OUTER JOIN othercolumn AS b USING(x) ORDER BY s",26038,53948
+testdata/logic_test/interleaved:57,SELECT * FROM p1_0,6330,8386
+testdata/logic_test/txn:136,SELECT * FROM kv,5827,8198
+testdata/logic_test/subquery:446,SELECT col0 FROM tab4 WHERE (col0 <= 0 AND col4 <= 5.38) OR (col4 IN (SELECT col1 FROM tab4 WHERE co,115581,230172
+testdata/logic_test/postgres_jsonb:84,SELECT test_json ->> 7 FROM test_jsonb WHERE json_type = 'array',25800,48870
+testdata/logic_test/array:453,SELECT b FROM a,8036,9740
+testdata/logic_test/aggregate:1076,"SELECT x, max(y) FROM group_ord GROUP BY x",18994,29998
+testdata/logic_test/tuple:152,"SELECT * FROM t ORDER BY a, b, c",10794,18140
+testdata/logic_test/select_index:381,SELECT * FROM bool2 WHERE a IS FALSE,19142,30874
+testdata/logic_test/conditional:25,"SELECT     a,     CASE     WHEN a = 1 THEN 'one'     WHEN a = 2 THEN 'two'     ELSE 'other'     END ",30272,61511
+testdata/logic_test/array:607,SELECT * FROM a,5470,11274
+testdata/logic_test/srfs:561,"SELECT * FROM generate_subscripts(ARRAY[3,2,1])",6398,11749
+testdata/logic_test/srfs:628,"SELECT * FROM generate_subscripts(ARRAY[3,2,1], 0)",6406,14375
+testdata/logic_test/uuid:109,SELECT token::bytes FROM u WHERE token=b'cafef00ddeadbeef',20430,40487
+testdata/logic_test/subquery:389,"SELECT a, b FROM (VALUES (1, 2, 3), (3, 4, 7), (5, 6, 10)) AS foo (a, b, c) WHERE a + b = c",18029,42626
+testdata/logic_test/select_search_path:55,SELECT count(*) FROM numbers,10582,17424
+testdata/logic_test/select:157,SELECT test.public.kv.* FROM kv,5541,8326
+testdata/logic_test/join:194,SELECT * FROM empty AS a JOIN onecolumn AS b USING(x),14444,44776
+testdata/logic_test/aggregate:501,"SELECT count((k, v)) FROM kv",15647,36249
+testdata/logic_test/show_trace:133,"SELECT operation, message FROM [SHOW KV TRACE FOR SESSION]",5987,7071
+testdata/logic_test/select_index:337,SELECT * FROM bool1 WHERE a IS NOT TRUE,20607,30405
+testdata/logic_test/select:259,SELECT * FROM xyzw LIMIT 0,8138,12236
+testdata/logic_test/interleaved:171,SELECT * FROM p1_0,7658,10044
+testdata/logic_test/views:106,SELECT y FROM v7,39676,46035
+testdata/logic_test/rows_from:27,"SELECT * FROM ROWS FROM (generate_series(1,0), generate_series(1,1))",7278,12447
+testdata/logic_test/order_by:298,"SELECT b+d FROM (SELECT * FROM abcd ORDER BY a,d)",20147,27541
+testdata/logic_test/join:304,"SELECT o.x, t.y FROM onecolumn o LEFT OUTER JOIN twocolumn t ON (o.x=t.x AND t.y=53)",36571,79089
+testdata/logic_test/computed:558,SELECT d FROM x,7341,11728
+testdata/logic_test/aggregate:882,SELECT jsonb_agg(s) FROM (SELECT s FROM kv ORDER BY k),19373,31569
+testdata/logic_test/select:475,"SELECT (1, NULL::int) IN (SELECT * FROM (VALUES (1, 1)) AS t(a, b) WHERE a > 1)",23189,63306
+testdata/logic_test/schema_change_in_txn:443,SELECT * FROM orders,7705,8563
+testdata/logic_test/tuple:65,"SELECT   (2, 2) <= (1, 1) AS a,   (2, 2) <= (1, 2) AS b,   (2, 2) <= (1, 3) AS c,   (2, 2) <= (2, 1)",80691,159993
+testdata/logic_test/tuple:713,"SELECT (((ROW(pow(1, 10.0) + 9) AS t1), 'a' || 'b') AS t2, t3) = (((ROW(sqrt(100.0)) AS t4), 'ab') A",87720,107873
+testdata/logic_test/suboperators:202,SELECT * FROM abc WHERE a > ANY(SELECT a FROM abc WHERE b = 20) IS NULL,45214,157854
+testdata/logic_test/suboperators:285,"SELECT * FROM abc WHERE a > ALL(ARRAY[1, NULL])",21795,30705
+testdata/logic_test/show_trace:14,"SELECT   span, regexp_replace(message, 'pos:[0-9]*', 'pos:?'), operation FROM [SHOW TRACE FOR SESSIO",20704,45274
+testdata/logic_test/select:234,SELECT * FROM xyzw ORDER BY 1 LIMIT '1',12180,16677
+testdata/logic_test/limit:82,"SELECT k, v FROM t ORDER BY v DESC LIMIT (1+4) OFFSET 1",15028,26577
+testdata/logic_test/join:262,SELECT * FROM empty AS a(x) FULL OUTER JOIN onecolumn AS b(y) ON a.x = b.y ORDER BY b.y,22099,55130
+testdata/logic_test/float:32,"SELECT f, f IS NaN, f = 'NaN', isnan(f) FROM p@{FORCE_INDEX=p_f_key} ORDER BY 1",33324,49526
+testdata/logic_test/aggregate:758,SELECT variance(x) FROM xyz WHERE x = 10,28897,51360
+testdata/logic_test/select:56,SELECT * FROM abc WHERE NULL,9603,14980
+testdata/logic_test/join:844,"SELECT * FROM xyu FULL OUTER JOIN xyv USING(x, y) WHERE x > 2",37270,102223
+testdata/logic_test/interleaved:83,SELECT * FROM p0@p0i WHERE i BETWEEN 2 AND 4,32237,49745
+testdata/logic_test/select_index_span_ranges:61,SELECT * FROM t@c WHERE (c >= 80) ORDER BY c,28418,39516
+testdata/logic_test/views:289,SELECT * FROM num_ref_view,18800,102817
+testdata/logic_test/target_names:35,"SELECT t::INT, '123'::INT, t:::STRING, '123':::INT FROM t",14712,31779
+testdata/logic_test/aggregate:312,SELECT count(*) FROM kv GROUP BY length('abc'),14911,40841
+testdata/logic_test/aggregate:726,SELECT max(y) FROM xyz WHERE x = 1,42935,80042
+testdata/logic_test/target_names:54,SELECT EXISTS(SELECT * FROM t),12492,22295
+testdata/logic_test/ordinal_references:42,"SELECT b, a FROM foo ORDER BY @1 % 2, a",14048,28604
+testdata/logic_test/alter_table:275,SELECT * FROM t,8288,11275
+testdata/logic_test/aggregate:566,SELECT array_agg(s) FROM kv WHERE s IS NULL,26585,49153
+testdata/logic_test/aggregate:741,"SELECT min(x) FROM xyz WHERE (y, z) = (2, 3.0)",57624,99747
+testdata/logic_test/system:423,SELECT name FROM system.settings WHERE name != 'sql.defaults.distsql' ORDER BY name,198298,193459
+testdata/logic_test/storing:154,"SELECT a, b FROM t14601a ORDER BY a",11405,14897
+testdata/logic_test/rename_column:43,SELECT * FROM users,6298,8969
+testdata/logic_test/builtin_function:1900,"SELECT to_english(i) FROM (VALUES (1), (13), (617), (-2)) AS a(i)",6626,25667
+testdata/logic_test/tuple:113,"SELECT   (2, 2) != (1, 1) AS a,   (2, 2) != (1, 2) AS b,   (2, 2) != (1, 3) AS c,   (2, 2) != (2, 1)",94394,158385
+testdata/logic_test/select:444,"SELECT (1, NULL::int) NOT IN (SELECT * FROM (VALUES (1, 1)) AS t(a, b))",16241,46693
+testdata/logic_test/distinct_on:318,SELECT DISTINCT ON(x) x AS y FROM xyz,8993,18615
+testdata/logic_test/collatedstring_index1:28,"SELECT a, b FROM t ORDER BY a, b",12095,19979
+testdata/logic_test/alias_types:31,"SELECT a, b FROM aliases ORDER BY a",11327,16774
+testdata/logic_test/aggregate:21,SELECT array_agg(1) FROM kv,13151,31518
+testdata/logic_test/suboperators:275,"SELECT * FROM abc WHERE a > ALL(ARRAY[0, 1]) ORDER BY a",24185,33493
+testdata/logic_test/postgresjoin:1814,SELECT * FROM (SELECT * FROM t2) as s2 INNER JOIN (SELECT * FROM t3) s3 USING (name),23291,40093
+testdata/logic_test/subquery:216,SELECT * FROM xyz,5929,7360
+testdata/logic_test/show_trace:313,"SELECT operation,        regexp_replace(regexp_replace(message, 'wall_time:\d+', 'wall_time:...'), '",24097,58669
+testdata/logic_test/select:317,SELECT w FROM test.xyzw@foo WHERE y = 5,25653,38272
+testdata/logic_test/array:535,SELECT * FROM a,5372,11390
+testdata/logic_test/subquery:281,"SELECT * FROM kv WHERE k = (SELECT k FROM kv WHERE (k, v) = (1, 'one'))",54211,76774
+testdata/logic_test/sequences:596,SELECT * FROM txn_test,4975,7470
+testdata/logic_test/insert:103,SELECT * FROM kv3,5577,8667
+testdata/logic_test/distinct_on:98,"SELECT DISTINCT ON (x, y) y, x FROM xyz",9765,19605
+testdata/logic_test/computed:154,"SELECT c, d FROM x",8872,10732
+testdata/logic_test/aggregate:561,SELECT array_agg(k) || 1 FROM (SELECT k FROM kv ORDER BY k),28808,53885
+testdata/logic_test/where:75,"SELECT 'hello' ~ replace(v, '%', '.*') FROM kvString WHERE k ~ 'like[1-2]' ORDER BY k",28118,47762
+testdata/logic_test/update:106,SELECT * FROM kv2,6341,9805
+testdata/logic_test/srfs:41,"SELECT * FROM generate_series(1, 2), generate_series(1, 2)",10370,17328
+testdata/logic_test/select:454,"SELECT (NULL::int, 1) NOT IN (SELECT * FROM (VALUES (1, 1)) AS t(a, b))",16669,75633
+testdata/logic_test/limit:125,"SELECT k, v FROM t ORDER BY k LIMIT length(pg_typeof(123)) OFFSET length(pg_typeof(123))-2",20181,41062
+testdata/logic_test/decimal:170,SELECT * FROM s WHERE d IS NAN,25364,39028
+testdata/logic_test/srfs:74,"SELECT * FROM generate_series(1, 1) AS c(x)",5028,8267
+testdata/logic_test/postgresjoin:1835,"SELECT * FROM (SELECT name, n as s2_n, 2 as s2_2 FROM t2) as s2 NATURAL INNER JOIN (SELECT name, n a",32804,60619
+testdata/logic_test/array:707,SELECT count(b) FROM a,13202,23221
+testdata/logic_test/suboperators:352,"SELECT * FROM abc WHERE a > ALL(SELECT * FROM unnest(ARRAY[1, NULL]))",28983,50639
+testdata/logic_test/ordinal_references:27,"SELECT b, a FROM foo ORDER BY 1",11009,14206
+testdata/logic_test/collatedstring_index2:151,"SELECT a, b FROM t ORDER BY a, b",12803,18443
+testdata/logic_test/suboperators:289,"SELECT * FROM abc WHERE a > ALL(ARRAY[NULL, NULL])",21523,26042
+testdata/logic_test/select:41,"SELECT NULL AS z, * FROM abc",10088,16138
+testdata/logic_test/select:485,"SELECT (NULL::int, NULL::int) IN (SELECT * FROM (VALUES (1, 1)) AS t(a, b) WHERE a > 1)",24802,64105
+testdata/logic_test/poison_after_push:73,SELECT * FROM t ORDER BY id,7545,9470
+testdata/logic_test/distinct_on:166,"SELECT DISTINCT ON (a) a, c FROM abc ORDER BY a, c DESC, b",16114,27208
+testdata/logic_test/deep_interleaving:122,SELECT * FROM level4 WHERE k1 = 2 AND k2 = 20 AND k3 = 200,44008,56185
+testdata/logic_test/decimal:121,SELECT * FROM t2 WHERE d IS NaN and v IS NaN,36416,44713
+testdata/logic_test/subquery:319,"SELECT * FROM (VALUES (1, 2, 3), (4, 5, 6)) AS foo",6563,13543
+testdata/logic_test/suboperators:336,SELECT * FROM abc WHERE a < ALL(SELECT b FROM abc WHERE b IS NOT NULL) ORDER BY a,40685,65152
+testdata/logic_test/select_index:103,"SELECT * FROM t12022@i WHERE (c1, c2) < (2, false) ORDER BY (c1, c2);",41873,59335
+testdata/logic_test/select:500,"SELECT (NULL::int, 1) NOT IN (SELECT * FROM (VALUES (1, 1)) AS t(a, b) WHERE a > 1)",23624,60896
+testdata/logic_test/postgres_jsonb:29,SELECT test_json -> 'x' FROM test_jsonb WHERE json_type = 'array',27404,44584
+testdata/logic_test/limit:118,"SELECT k, v FROM t ORDER BY k LIMIT length(pg_typeof(123))",15774,26518
+testdata/logic_test/txn:32,SELECT * FROM kv,5543,7602
+testdata/logic_test/srfs:129,"SELECT t.*, u.*, generate_series(1,2), generate_series(3, 4) FROM t, u",43102,66766
+testdata/logic_test/select_index:96,"SELECT * FROM t12022@i WHERE (c1, c2) < (2, NULL) ORDER BY (c1, c2);",39161,53140
+testdata/logic_test/join:186,SELECT * FROM onecolumn AS a JOIN empty AS b USING(x),15443,42173
+testdata/logic_test/join:955,SELECT * FROM l RIGHT OUTER JOIN r USING(a) WHERE a = 4,37564,69170
+testdata/logic_test/delete:139,"SELECT k, v FROM unindexed",7340,8507
+testdata/logic_test/where:44,SELECT * FROM kv WHERE k IN (SELECT k FROM kv),24810,46559
+testdata/logic_test/order_by:134,"SELECT a FROM t ORDER BY a+b DESC, a",14244,30763
+testdata/logic_test/limit:53,SELECT * FROM t WHERE v > -20 AND w > 30 ORDER BY v LIMIT 2,41779,92038
+testdata/logic_test/srfs:145,"SELECT 3 + x AS r FROM generate_series(1,2) AS a(x)",10698,25791
+testdata/logic_test/rename_database:32,SELECT * FROM kv,5464,8337
+testdata/logic_test/json:127,SELECT bar FROM foo WHERE bar ? 'a',18201,22884
+testdata/logic_test/drop_table:48,SELECT * FROM a,4321,7424
+testdata/logic_test/subquery:361,"SELECT * FROM (SELECT * FROM xyz AS moo (moo1, moo2, moo3) ORDER BY moo1) as foo (foo1) WHERE foo1 <",26114,25750
+testdata/logic_test/interleaved:49,SELECT * FROM p2,4646,7441
+testdata/logic_test/distinct_on:343,"SELECT DISTINCT ON(pk1, pk2, x, y) x, y, z FROM xyz ORDER BY x, y",21190,22363
+testdata/logic_test/tuple:97,"SELECT   (2, 2) = (1, 1) AS a,   (2, 2) = (1, 2) AS b,   (2, 2) = (1, 3) AS c,   (2, 2) = (2, 1) AS ",97580,145899
+testdata/logic_test/select:470,SELECT NULL::int IN (SELECT * FROM (VALUES (1)) AS t(a) WHERE a > 1),19908,45866
+testdata/logic_test/rename_view:21,SELECT * FROM v,18190,23630
+testdata/logic_test/ordinality:59,SELECT * FROM foo WITH ORDINALITY WHERE x > 'a',13642,25802
+testdata/logic_test/array:360,"SELECT k FROM t WHERE k < ALL ARRAY[2,4]",22912,28756
+testdata/logic_test/multi_statement:9,SELECT * FROM kv,5093,8591
+testdata/logic_test/timestamp:14,SELECT '2000-05-05 10:00:00+03':::TIMESTAMP FROM a,11392,21798
+testdata/logic_test/select:434,"SELECT (NULL::int, NULL::int) IN (SELECT * FROM (VALUES (1, 1)) AS t(a, b))",25176,46629
+testdata/logic_test/join:700,SELECT * FROM t1 JOIN t2 ON t2.x=t1.x,32707,60688
+testdata/logic_test/insert:55,SELECT * FROM kv ORDER BY k,8704,12359
+testdata/logic_test/alter_table:512,"SELECT a,b,f FROM add_default",11387,13690
+testdata/logic_test/tuple:81,"SELECT   (2, 2) >= (1, 1) AS a,   (2, 2) >= (1, 2) AS b,   (2, 2) >= (1, 3) AS c,   (2, 2) >= (2, 1)",88568,138842
+testdata/logic_test/subquery:375,"SELECT * FROM (SELECT * FROM (VALUES (1, 2, 3), (4, 5, 6)) AS moo (moo1, moo2, moo3) WHERE moo1 = 4)",17092,32737
+testdata/logic_test/select_table_alias:35,"SELECT * FROM abc AS foo (foo1, foo2)",6608,9235
+testdata/logic_test/rows_from:54,"SELECT * FROM ROWS FROM (current_user, current_user)",5644,9613
+testdata/logic_test/join:837,"SELECT * FROM xyu RIGHT OUTER JOIN xyv USING(x, y) WHERE x > 2",48670,93251
+testdata/logic_test/aggregate:456,"SELECT v, count(k) FROM kv GROUP BY v ORDER BY count(k) DESC",21942,33190
+testdata/logic_test/array:488,SELECT * FROM a,6771,11386
+testdata/logic_test/select:429,"SELECT (NULL::int, 2) IN (SELECT * FROM (VALUES (1, 1)) AS t(a, b))",18770,46323
+testdata/logic_test/order_by:69,"SELECT a AS foo, b FROM t ORDER BY foo DESC",10976,12937
+testdata/logic_test/join:165,SELECT * FROM (SELECT x FROM onecolumn ORDER BY x DESC) NATURAL JOIN (VALUES (42)) AS v(x) LIMIT 1,20987,56864
+testdata/logic_test/delete:56,SELECT * FROM kv,5747,11501
+testdata/logic_test/deep_interleaving:97,SELECT * FROM level4 WHERE k1 > 1 AND k1 < 3,29811,38498
+testdata/logic_test/array:21,SELECT ARRAY[k] FROM k,7301,20577
+testdata/logic_test/aggregate:511,"SELECT count(DISTINCT (k, (v))) FROM kv",16234,40899
+testdata/logic_test/join:858,SELECT * FROM xyu INNER JOIN xyv ON xyu.x = xyv.x AND xyu.y = xyv.y AND xyu.x = 1 AND xyu.y < 10,75452,148315
+testdata/logic_test/interleaved:111,SELECT * FROM p0,6920,12720
+testdata/logic_test/collatedstring_constraint:47,SELECT b FROM c1 ORDER BY a,12243,13100
+testdata/logic_test/aggregate:933,SELECT 1 FROM kv GROUP BY kv.*,12177,26950
+testdata/logic_test/suboperators:132,"SELECT 1 < ANY(SELECT * FROM generate_series(0,1))",12746,25406
+testdata/logic_test/select_index:332,SELECT * FROM bool1 WHERE a IS TRUE,20632,33064
+testdata/logic_test/join:723,SELECT * FROM t1 FULL OUTER JOIN t2 ON t1.x=t2.x,26574,54089
+testdata/logic_test/drop_database:170,SELECT * FROM d2.v1,17898,19971
+testdata/logic_test/views:81,SELECT x FROM v2,23042,22152
+testdata/logic_test/postgresjoin:1827,SELECT * FROM (SELECT * FROM t2) as s2 FULL JOIN (SELECT * FROM t3) s3 USING (name),26459,45687
+testdata/logic_test/join:30,SELECT * FROM onecolumn AS a(x) JOIN onecolumn AS b(y) ON a.x = b.y,20053,53911
+testdata/logic_test/inet:520,SELECT * FROM u ORDER BY ip,7608,9597
+testdata/logic_test/join:182,SELECT * FROM onecolumn AS a(x) JOIN empty AS b(y) ON a.x = b.y,21663,48536
+testdata/logic_test/distinct_on:184,SELECT DISTINCT ON (x) x FROM xyz ORDER BY x DESC,11549,18155
+testdata/logic_test/views:173,SELECT * FROM test2.v1,30992,32523
+testdata/logic_test/truncate:105,SELECT * FROM c,4978,8120
+testdata/logic_test/select_index:371,SELECT * FROM bool2 WHERE a IS TRUE,18836,31257
+testdata/logic_test/select:253,"SELECT (x,y) FROM xyzw",9169,21178
+testdata/logic_test/scale:110,SELECT d FROM td,6027,10376
+testdata/logic_test/join:12,SELECT * FROM onecolumn AS a(x) CROSS JOIN onecolumn AS b(y),12030,27727
+testdata/logic_test/computed:520,SELECT d FROM x,7158,10813
+testdata/logic_test/order_by:82,"SELECT a AS foo, (a) AS foo FROM t ORDER BY foo LIMIT 1",12653,21963
+testdata/logic_test/float:92,"SELECT f, f::string FROM vals",9715,21398
+testdata/logic_test/drop_database:119,SELECT * FROM d2.v1,19408,20146
+testdata/logic_test/views:154,SELECT * FROM test.v7,42688,42309
+testdata/logic_test/uuid:99,SELECT token::uuid FROM u WHERE token=b'cafef00ddeadbeef',21277,38952
+testdata/logic_test/upsert:260,"SELECT * FROM abc ORDER BY (a, b, c)",18146,20251
+testdata/logic_test/suboperators:348,SELECT * FROM abc WHERE a < ALL(SELECT a FROM abc),26320,45820
+testdata/logic_test/family:45,SELECT count(*) FROM abcd@d_idx,11649,23104
+testdata/logic_test/distinct_on:132,"SELECT DISTINCT ON (c, a) b, c, a FROM abc ORDER BY c, a, b DESC",17334,27792
+testdata/logic_test/tuple:283,"SELECT 1 IN (2, x) AS r FROM (SELECT NULL AS x FROM tb)",13659,34923
+testdata/logic_test/suboperators:311,"SELECT 1 < ALL(SELECT * FROM generate_series(2,5))",11358,27061
+testdata/logic_test/select:136,SELECT k FROM kv,6435,9627
+testdata/logic_test/join:226,SELECT * FROM onecolumn AS a RIGHT OUTER JOIN empty AS b USING(x),14862,38831
+testdata/logic_test/aggregate:126,"SELECT 1 + count(*) FROM generate_series(1,0)",14052,36041
+testdata/logic_test/aggregate:307,SELECT count(*) FROM kv GROUP BY 1+2,14129,37378
+testdata/logic_test/decimal:131,SELECT * FROM t2 WHERE d = '-Infinity' and v = '-Infinity',36851,46675
+testdata/logic_test/tuple:167,SELECT (t.*) AS a FROM t,10345,26587
+testdata/logic_test/show_trace:513,"SELECT DISTINCT node_id, store_id, replica_id   FROM [SHOW EXPERIMENTAL_REPLICA TRACE FOR SESSION]",8543,9204
+testdata/logic_test/no_primary_key:23,"SELECT a, b FROM t",7933,9544
+testdata/logic_test/join:270,SELECT * FROM empty AS a FULL OUTER JOIN onecolumn AS b USING(x) ORDER BY x,19104,56810
+testdata/logic_test/function_lookup:24,SELECT * FROM foo LIMIT length(pg_typeof(123)),7360,16494
+testdata/logic_test/family:53,SELECT * FROM abcd,6943,10122
+testdata/logic_test/select_table_alias:42,"SELECT * FROM abc AS foo (foo1, foo2, foo3)",6498,9010
+testdata/logic_test/insert:406,SELECT * FROM insert_t,8261,12113
+testdata/logic_test/aggregate:289,"SELECT v, count(*), w FROM kv GROUP BY 1, 3",22090,30712
+testdata/logic_test/aggregate:961,SELECT min(v) FROM opt_test,23780,48151
+testdata/logic_test/aggregate:943,SELECT sum(abc.d) FROM kv JOIN abc ON kv.k >= abc.d GROUP BY kv.*,32078,94671
+testdata/logic_test/uuid:75,"SELECT token FROM u WHERE token IN ('63616665-6630-3064-6465-616462656562', '63616665-6630-3064-6465",28400,50488
+testdata/logic_test/postgres_jsonb:54,SELECT test_json ->> 'field2' FROM test_jsonb WHERE json_type = 'object',26297,48427
+testdata/logic_test/join:44,SELECT * FROM onecolumn AS a NATURAL JOIN onecolumn as b,14413,44846
+testdata/logic_test/join:615,SELECT * FROM pairs FULL OUTER JOIN square ON pairs.a + pairs.b = square.sq,22978,45638
+testdata/logic_test/distinct_on:219,SELECT DISTINCT ON (max(x)) min(y) FROM xyz,25559,55069
+testdata/logic_test/aggregate:442,"SELECT v, count(k) FROM kv GROUP BY v ORDER BY v",20167,30386
+testdata/logic_test/join:802,"SELECT s, str1.s, str2.s FROM str1 FULL OUTER JOIN str2 USING(s)",21292,54016
+testdata/logic_test/decimal:296,SELECT * FROM s@primary WHERE d = 10,24641,36143
+testdata/logic_test/typing:51,SELECT * FROM d,5209,8964
+testdata/logic_test/suboperators:86,"SELECT * FROM abc WHERE a = ANY(ARRAY[1,3]) ORDER BY a",24861,31932
+testdata/logic_test/storing:73,SELECT a FROM t14601 ORDER BY a,9935,15044
+testdata/logic_test/schema_change_in_txn:317,SELECT * FROM test.cutlery,10432,14107
+testdata/logic_test/order_by:214,"SELECT generate_series, ARRAY[generate_series] FROM generate_series(1, 1) ORDER BY -generate_series",13397,25152
+testdata/logic_test/join:363,SELECT * FROM a FULL OUTER JOIN b ON a.i = b.i,21044,44342
+testdata/logic_test/aggregate:162,SELECT array_agg(1) FROM kv,14054,30253
+testdata/logic_test/storing:112,"SELECT a, b FROM t14601a ORDER BY a",13476,16307
+testdata/logic_test/srfs:86,"SELECT * FROM generate_series(1, 1) WITH ORDINALITY AS c(x, y)",6727,10828
+testdata/logic_test/select_index:248,SELECT * FROM abcd@abcd WHERE a = 1 AND b IS NULL AND c > 0 AND c < 10 ORDER BY c,63166,100289
+testdata/logic_test/rows_from:40,"SELECT * FROM ROWS FROM (generate_series(1,2), current_user)",6624,12674
+testdata/logic_test/order_by:410,"SELECT a, b, c FROM abc2 ORDER BY PRIMARY KEY abc2 DESC",20188,18073
+testdata/logic_test/array:771,SELECT * FROM a,10013,10745
+testdata/logic_test/postgresjoin:1861,"SELECT * FROM (SELECT name, n as s1_n, 1 as s1_1 FROM t1) as s1 NATURAL FULL JOIN (SELECT name, n as",61039,116067
+testdata/logic_test/datetime:880,"SELECT b, b::date, c, c::date FROM u WHERE a = 123",29618,54264
+testdata/logic_test/collatedstring_index2:74,"SELECT a, b FROM t ORDER BY a, b",14221,19789
+testdata/logic_test/alter_table:56,SELECT * FROM t,5977,11420
+testdata/logic_test/suboperators:281,"SELECT * FROM abc WHERE a > ALL(ARRAY[1, 4])",21218,28322
+testdata/logic_test/serial:81,"SELECT count(DISTINCT a), count(DISTINCT b), count(DISTINCT c) FROM serials",26208,37645
+testdata/logic_test/select:268,SELECT * FROM xyzw ORDER BY x LIMIT 1 OFFSET 1,12710,18281
+testdata/logic_test/order_by:22,SELECT c FROM t ORDER BY c,9149,13289
+testdata/logic_test/order_by:290,SELECT a+b FROM (SELECT * FROM abcd ORDER BY d),19261,28045
+testdata/logic_test/join:206,SELECT * FROM onecolumn AS a LEFT OUTER JOIN empty AS b USING(x) ORDER BY x,16106,46831
+testdata/logic_test/array:594,SELECT b FROM a,5728,12975
+testdata/logic_test/suboperators:343,SELECT * FROM abc WHERE a < ALL(SELECT a FROM abc WHERE a >= 2),39341,61023
+testdata/logic_test/interleaved:89,SELECT * FROM p1_1@p1_id WHERE d BETWEEN 1.5 AND 4.0,33820,43338
+testdata/logic_test/distinct_on:141,SELECT DISTINCT ON (y) y FROM xyz,8105,16608
+testdata/logic_test/array:403,SELECT ARRAY[ROW()] FROM ident,6821,16969
+testdata/logic_test/array:723,SELECT b FROM a,5804,9708
+testdata/logic_test/aggregate:331,"SELECT count(*), k+v FROM kv GROUP BY k+v",24959,43082
+testdata/logic_test/txn:71,SELECT * FROM kv,5483,8232
+testdata/logic_test/show_trace:177,"SELECT operation, message FROM [SHOW KV TRACE FOR SESSION]",5909,6794
+testdata/logic_test/order_by:94,"SELECT a AS foo, b FROM t ORDER BY a DESC",12047,13909
+testdata/logic_test/multi_statement:16,SELECT * FROM kv,5503,8422
+testdata/logic_test/interleaved:382,SELECT count(*) FROM users JOIN documents ON users.id=documents.user_id WHERE documents.id=0,39768,82077
+testdata/logic_test/as_of:15,SELECT * FROM t AS OF SYSTEM TIME '-1ns',203239,180342
+testdata/logic_test/serial:130,"SELECT count(DISTINCT a), count(DISTINCT b), count(DISTINCT c) FROM serial",22573,32718
+testdata/logic_test/join:863,SELECT * FROM xyu LEFT OUTER JOIN xyv ON xyu.x = xyv.x AND xyu.y = xyv.y AND xyu.x = 1 AND xyu.y < 1,65138,134474
+testdata/logic_test/join:1054,SELECT * FROM onecolumn AS a(x) RIGHT JOIN twocolumn ON false,16737,30755
+testdata/logic_test/distinct:77,SELECT DISTINCT y + z FROM xyz ORDER by (y + z),16944,39263
+testdata/logic_test/aggregate:178,SELECT 1 FROM kv GROUP BY v,12309,31718
+testdata/logic_test/aggregate:470,"SELECT v, count(k) FROM kv GROUP BY v ORDER BY 1 DESC",20220,31338
+testdata/logic_test/select_index_flags:43,SELECT * FROM abcd@cd WHERE a >= 20 AND a <= 30,34153,39731
+testdata/logic_test/schema_change_in_txn:245,SELECT * FROM ship,7865,14467
+testdata/logic_test/postgres_jsonb:34,SELECT test_json -> 'x' FROM test_jsonb WHERE json_type = 'object',29306,50849
+testdata/logic_test/collatedstring_uniqueindex2:115,"SELECT b, a FROM t ORDER BY b, a",14336,18447
+testdata/logic_test/aggregate:591,"SELECT avg(DISTINCT k), avg(DISTINCT v), sum(DISTINCT k), sum(DISTINCT v) FROM kv",26113,44712
+testdata/logic_test/srfs:643,"SELECT * FROM generate_subscripts(ARRAY[3,2,1], -1)",11469,13873
+testdata/logic_test/select_index:460,SELECT * FROM noncover WHERE c = 7,25068,32482
+testdata/logic_test/order_by:111,"SELECT a, b FROM t WHERE b = 7 ORDER BY b, a",26749,39606
+testdata/logic_test/join:916,"SELECT * FROM xyu RIGHT OUTER JOIN (SELECT * FROM xyv ORDER BY x, y) AS xyv ON xyu.x = xyv.x AND xyu",67325,115610
+testdata/logic_test/create_as:9,SELECT * FROM runningOut,6879,11257
+testdata/logic_test/aggregate:483,SELECT count(kv.*) FROM kv,19752,40469
+testdata/logic_test/srfs:633,"SELECT * FROM generate_subscripts(ARRAY[3,2,1], 0, false)",6871,16282
+testdata/logic_test/system:74,SELECT length(descriptor) * (id - 1) FROM system.descriptor WHERE id = 1,202802,238262
+testdata/logic_test/postgresjoin:1820,SELECT * FROM (SELECT * FROM t2) as s2 LEFT JOIN (SELECT * FROM t3) s3 USING (name),22925,39581
+testdata/logic_test/ordinality:50,"SELECT * FROM (SELECT x, ordinality*2 FROM foo WITH ORDINALITY AS a) JOIN foo WITH ORDINALITY AS b U",30636,64290
+testdata/logic_test/join:608,"SELECT a, b, n, sq FROM (SELECT a, b, a * b / 2 AS div, n, sq FROM pairs, square) WHERE div = sq",40613,69353
+testdata/logic_test/distinct_on:43,"SELECT DISTINCT ON (x, y, z) x, y, z FROM xyz",12306,20798
+testdata/logic_test/typing:126,SELECT * FROM untyped,13335,12751
+testdata/logic_test/select_index:32,"SELECT i, s FROM ab WHERE (i, s) < (1, 'c')",34611,45235
+testdata/logic_test/postgres_jsonb:121,SELECT (test_json->'field3') IS NULL AS expect_false FROM test_jsonb WHERE json_type = 'object',32476,59558
+testdata/logic_test/datetime:936,"SELECT b + interval '1m', interval '1m' + b, c + interval '1m', interval '1m' + c FROM tz WHERE a = ",41332,72875
+testdata/logic_test/tuple:175,"SELECT ((1, 2), 'equal') = ((1, 2.0), 'equal') AS a,        ((1, 2), 'equal') = ((1, 2.0), 'not equa",39067,86778
+testdata/logic_test/subquery:291,SELECT EXISTS(SELECT 1 FROM kv WHERE k = 2),24009,45733
+testdata/logic_test/suboperators:137,"SELECT 1 = ANY(SELECT * FROM unnest(ARRAY[1.0, 1.1]))",14986,30995
+testdata/logic_test/join:59,SELECT * FROM onecolumn AS a LEFT OUTER JOIN onecolumn AS b USING(x) ORDER BY x,15894,45672
+testdata/logic_test/check_constraints:177,SELECT * FROM t5,7052,8255
+testdata/logic_test/aggregate:521,"SELECT count(DISTINCT a.*) FROM kv a, kv b",26805,56086
+testdata/logic_test/values:29,"SELECT a + b FROM (VALUES (1, 2), (3, 4), (5, 6)) AS v(a, b)",9479,27653
+testdata/logic_test/update:325,SELECT * FROM pks,6433,9913
+testdata/logic_test/srfs:173,"SELECT x, generate_series(3, x, -1) FROM ordered_t ORDER BY 1, 2;",15877,28671
+testdata/logic_test/select:116,SELECT * FROM kv,5507,7945
+testdata/logic_test/json:132,"SELECT bar FROM foo WHERE bar ?| ARRAY['a','b']",19878,26271
+testdata/logic_test/collatedstring_nullinindex:22,SELECT b FROM t ORDER BY b,11879,15249
+testdata/logic_test/tuple:771,"SELECT (((1,'2',true) AS a,b,c)).a       ,(((1,'2',true) AS a,b,c)).b       ,(((1,'2',true) AS a,b,c",16677,29071
+testdata/logic_test/subquery:470,SELECT * FROM test2 WHERE 0 = CASE WHEN true THEN (SELECT a FROM test LIMIT 1) ELSE 10 END,27291,41088
+testdata/logic_test/sequences:867,SELECT message FROM [SHOW KV TRACE FOR SESSION],4809,7155
+testdata/logic_test/interleaved:104,SELECT * FROM p2,4960,7566
+testdata/logic_test/update:117,SELECT * FROM kv2,5732,10069
+testdata/logic_test/parallel_stmts:198,"SELECT k, v FROM kv ORDER BY k",8565,9848
+testdata/logic_test/distinct_on:329,"SELECT DISTINCT ON(((x)), (x, y)) x, y FROM xyz",12751,22896
+testdata/logic_test/aggregate:967,SELECT min(v) FROM opt_test@primary,21876,43821
+testdata/logic_test/tuple:218,"SELECT k, v FROM kv WHERE (k, v) = (1, 100)",34132,43621
+testdata/logic_test/distinct:32,"SELECT DISTINCT y, z FROM xyz",8914,15822
+testdata/logic_test/tuple:247,SELECT 3 IN (SELECT c FROM t ORDER BY 1 ASC) AS r,21461,32209
+testdata/logic_test/srfs:80,"SELECT * FROM generate_series(1, 1) WITH ORDINALITY",6498,10092
+testdata/logic_test/srfs:136,"SELECT t.*, u.*, a.*, b.* FROM t, u, generate_series(1, 2) AS a, generate_series(3, 4) AS b",33295,61445
+testdata/logic_test/interleaved:481,SELECT message FROM [SHOW KV TRACE FOR SESSION],4731,6823
+testdata/logic_test/distinct_on:293,"SELECT DISTINCT ON (1,2,3) x, y, z FROM xyz",11407,21649
+testdata/logic_test/default:83,"SELECT a, b <= now(), c = -1.0 FROM t WHERE a = 1",48581,76521
+testdata/logic_test/where:33,"SELECT * FROM kv WHERE k IN (1, 3)",20482,30623
+testdata/logic_test/tuple:811,"SELECT ((ROW(1,'2',true) AS a,b,c)).* FROM tb",10643,20644
+testdata/logic_test/select_index_flags:35,SELECT * FROM abcd@b WHERE a >= 20 AND a <= 30,36352,39160
+testdata/logic_test/join:218,SELECT * FROM empty AS a LEFT OUTER JOIN onecolumn AS b USING(x),14300,39975
+testdata/logic_test/distinct_on:161,"SELECT DISTINCT ON (a) a, b, c FROM abc ORDER BY a, b, c",13331,23911
+testdata/logic_test/select_table_alias:121,SELECT * FROM to_english(3) AS x,4647,9185
+testdata/logic_test/optimizer:46,SELECT * FROM test.t UNION SELECT * FROM test.t,17766,17198
+testdata/logic_test/as_of:27,SELECT * FROM t AS OF SYSTEM TIME -( ('1' || 'ns')::INTERVAL ),158903,183340
+testdata/logic_test/srfs:50,"SELECT * FROM generate_series(3, 1, -1)",5157,9532
+testdata/logic_test/select_index:21,SELECT b FROM t WHERE c > 4.0 AND a < 4,37596,48167
+testdata/logic_test/join:714,SELECT * FROM t1 NATURAL FULL OUTER JOIN t2,31930,73558
+testdata/logic_test/subquery:199,SELECT * FROM abc WHERE a = 7,18622,22797
+testdata/logic_test/select_index:482,SELECT * FROM noncover WHERE b = 5 AND b <> 5 AND d>100,45087,34474
+testdata/logic_test/as_of:10,SELECT * FROM t AS OF SYSTEM TIME '-0ns',189522,249128
+testdata/logic_test/update:165,SELECT * FROM abc,6262,9099
+testdata/logic_test/sequences:855,SELECT count(DISTINCT x) FROM svals,13125,23960
+testdata/logic_test/select_index:228,SELECT * FROM abcd@abcd WHERE a IS NULL ORDER BY b,27949,42218
+testdata/logic_test/join:222,SELECT * FROM onecolumn AS a(x) RIGHT OUTER JOIN empty AS b(y) ON a.x = b.y,19594,45513
+testdata/logic_test/join:343,SELECT * FROM a INNER JOIN b ON a.i = b.i,21640,46845
+testdata/logic_test/alter_table:569,SELECT * FROM d,9598,9355
+testdata/logic_test/srfs:324,SELECT * FROM current_schema() WITH ORDINALITY AS a(b),6311,10760
+testdata/logic_test/serial:157,"SELECT count(DISTINCT a), count(DISTINCT b), count(DISTINCT c) FROM smallbig",27298,35892
+testdata/logic_test/select:567,"SELECT x + 1, x + y FROM a WHERE x + y > 20",34421,46018
+testdata/logic_test/schema_change_in_txn:465,SELECT * FROM want@foo,7319,10765
+testdata/logic_test/aggregate:167,SELECT json_agg(1) FROM kv,11660,28415
+testdata/logic_test/select_index_flags:27,SELECT * FROM abcd@primary WHERE a >= 20 AND a <= 30,30435,36078
+testdata/logic_test/interleaved:64,SELECT * FROM p1_1,6159,8064
+testdata/logic_test/datetime:81,"SELECT max(b), max(c), max(d), max(e) FROM u",34533,48403
+testdata/logic_test/array:551,SELECT * FROM a,5335,11159
+testdata/logic_test/aggregate:115,"SELECT COALESCE(max(1), 0) FROM generate_series(1,0)",16013,53732
+testdata/logic_test/aggregate:1100,"SELECT z, x, max(y) FROM group_ord GROUP BY x, z",23521,33025
+testdata/logic_test/truncate:45,SELECT * FROM kv,5276,8248
+testdata/logic_test/rename_table:139,SELECT * FROM test2.t,5690,8880
+testdata/logic_test/parallel_stmts:68,"SELECT k, v FROM kv ORDER BY k",8751,9702
+testdata/logic_test/distinct_on:107,"SELECT DISTINCT ON (y, x) x FROM xyz",13355,20552
+testdata/logic_test/aggregate:1155,"SELECT v, array_agg('a') FROM kv GROUP BY v",18069,34755
+testdata/logic_test/select_index:41,"SELECT i, s FROM ab@baz WHERE (i, s) < (1, 'c')",38241,54410
+testdata/logic_test/schema_change_in_txn:238,SELECT * FROM shop,7732,11601
+testdata/logic_test/pgoidtype:274,SELECT * FROM o WHERE a < 3,18291,23152
+testdata/logic_test/collatedstring_uniqueindex1:108,"SELECT a, b FROM t ORDER BY a, b",14117,17987
+testdata/logic_test/tuple:817,"SELECT (((ROW(1,'2',true) AS a,b,c)).*, 456) FROM tb",9130,28724
+testdata/logic_test/subquery:186,SELECT (SELECT a FROM abc WHERE false),14069,19870
+testdata/logic_test/select:273,SELECT * FROM xyzw ORDER BY y OFFSET 1,12206,17513
+testdata/logic_test/aggregate:31,SELECT jsonb_agg(1) FROM kv,11617,30329
+testdata/logic_test/select_index:361,SELECT * FROM bool2 WHERE a IS NULL,16733,28442
+testdata/logic_test/select:490,SELECT NULL::int NOT IN (SELECT * FROM (VALUES (1)) AS t(a) WHERE a > 1),20130,45664
+testdata/logic_test/ordinal_references:19,"SELECT @2, @1 FROM foo",7117,16965
+testdata/logic_test/join:37,SELECT * FROM onecolumn AS a JOIN onecolumn as b USING(x) ORDER BY x,15534,52998
+testdata/logic_test/join:990,SELECT * FROM foo NATURAL JOIN bar,29861,92785
+testdata/logic_test/float:125,"SELECT f, f::string FROM vals",9544,22653
+testdata/logic_test/collatedstring_index1:162,"SELECT b, a FROM t ORDER BY b, a",13903,19340
+testdata/logic_test/collatedstring_constraint:76,SELECT a FROM c2 ORDER BY a,9434,13108
+testdata/logic_test/tuple:390,"SELECT * FROM uvw WHERE (u, v, w) >= (1, 2, 3) ORDER BY u, v, w",40998,53017
+testdata/logic_test/srfs:27,"SELECT * FROM generate_series('2017-11-11 03:00:00'::TIMESTAMP, '2017-11-11 00:00:00'::TIMESTAMP, '-",5481,11460
+testdata/logic_test/postgres_jsonb:126,SELECT (test_json->>'field3') FROM test_jsonb WHERE json_type = 'object';,27228,49156
+testdata/logic_test/limit:109,"SELECT k FROM (SELECT k, v, w FROM t ORDER BY v LIMIT 4)",17525,27172
+testdata/logic_test/json:152,SELECT bar->'a' FROM foo,10174,22532
+testdata/logic_test/join:72,SELECT * FROM onecolumn AS a NATURAL LEFT OUTER JOIN onecolumn AS b,14981,87975
+testdata/logic_test/views:117,SELECT * FROM v1 AS v1 INNER JOIN v2 AS v2 ON v1.a = v2.x,48120,83028
+testdata/logic_test/typing:197,"SELECT * FROM t1, t2 WHERE a = b AND age(b, TIMESTAMPTZ '2017-01-01') > INTERVAL '1 day'",45142,90604
+testdata/logic_test/storing:82,SELECT a FROM t14601 ORDER BY a,9281,14151
+testdata/logic_test/alter_table:200,SELECT * FROM t,5979,10457
+testdata/logic_test/srfs:653,"SELECT * FROM generate_subscripts(ARRAY[3,2,1], -1, true)",11526,15234
+testdata/logic_test/select_index:290,"SELECT * FROM xy WHERE x IN (NULL, 1, 2)",28572,44040
+testdata/logic_test/select:534,SELECT * FROM a WHERE x > 1 AND y < 30,28622,43326
+testdata/logic_test/drop_database:131,SELECT * FROM d2.v4,45325,101855
+testdata/logic_test/decimal:160,SELECT * FROM s WHERE d = 0,22608,36340
+testdata/logic_test/conditional:42,"SELECT     a,     CASE a     WHEN 1 THEN 'one'     WHEN 2 THEN 'two'     ELSE 'other'     END FROM  ",18038,41019
+testdata/logic_test/aggregate:493,"SELECT upper(s), count(DISTINCT k), count(DISTINCT v), count(DISTINCT (v)) FROM kv GROUP BY upper(s)",33575,118945
+testdata/logic_test/subquery:347,SELECT * FROM (SELECT * FROM xyz) AS foo (foo1) WHERE foo1 < 7,22330,24195
+testdata/logic_test/suboperators:212,"SELECT * FROM abc WHERE a = ANY(SELECT * FROM unnest(ARRAY[4, NULL]))",30257,50507
+testdata/logic_test/select:449,"SELECT (2, NULL::int) NOT IN (SELECT * FROM (VALUES (1, 1)) AS t(a, b))",16355,49659
+testdata/logic_test/join:793,"SELECT s, str1.s, str2.s FROM str1 RIGHT OUTER JOIN str2 USING(s)",21645,53639
+testdata/logic_test/distinct:41,"SELECT y FROM (SELECT DISTINCT y, z FROM xyz)",12518,20672
+testdata/logic_test/aggregate:208,"SELECT count(*), k FROM kv GROUP BY 2",16991,26488
+testdata/logic_test/suboperators:127,"SELECT 1 < ANY(SELECT * FROM generate_series(1,3))",12257,24673
+testdata/logic_test/select_index:572,"SELECT pk, col0 FROM tab1 WHERE (col3 BETWEEN 66 AND 87) ORDER BY 1 DESC",47216,58189
+testdata/logic_test/order_by:209,"SELECT generate_series, ARRAY[generate_series] FROM generate_series(1, 1) ORDER BY generate_series",9266,21796
+testdata/logic_test/aggregate:172,SELECT jsonb_agg(1) FROM kv,12193,29396
+testdata/logic_test/subquery:404,"SELECT foo.a, a, column2, foo.column2 FROM (VALUES (1, 'one'), (2, 'two'), (3, 'three')) AS foo (a)",11584,18192
+testdata/logic_test/select_index:212,SELECT * FROM abcd@abcd WHERE a IS NULL AND b > 5,39662,47521
+testdata/logic_test/distinct:59,"SELECT DISTINCT y, z FROM xyz ORDER BY y",14798,20250
+testdata/logic_test/computed:162,"SELECT a, b, c, d FROM x",10366,9782
+testdata/logic_test/computed:542,SELECT d FROM x,7673,10837
+testdata/logic_test/subquery:305,"SELECT * FROM (VALUES (1, 2))",4008,7654
+testdata/logic_test/srfs:6,"SELECT * FROM generate_series(1, NULL)",5537,9201
+testdata/logic_test/join:88,SELECT * FROM onecolumn AS a RIGHT OUTER JOIN onecolumn AS b USING(x) ORDER BY x,16728,48062
+testdata/logic_test/tuple:493,"SELECT * FROM uvw WHERE (u, v, w) < (2, 2, 2) ORDER BY u, v, w",45006,62025
+testdata/logic_test/inet:541,SELECT * FROM arrays,5587,9521
+testdata/logic_test/tuple:27,"SELECT (1, 2, 'hello', NULL, NULL) AS t, (true, NULL, (false, 6.6, false)) AS u FROM tb",20800,39377
+testdata/logic_test/select:141,"SELECT kv.K,KV.v FROM kv",8191,10875
+testdata/logic_test/join:437,"SELECT a.x AS s, b.x, c.x, a.y, b.y, c.y FROM (twocolumn AS a JOIN twocolumn AS b USING(x) JOIN twoc",37343,93175
+testdata/logic_test/distinct_on:80,"SELECT DISTINCT ON (b, c, a) a FROM abc",13488,15613
+testdata/logic_test/builtin_function:1257,"SELECT greatest(NULL, a, 5, NULL) FROM foo",11454,26327
+testdata/logic_test/aggregate:1134,"SELECT * FROM (SELECT x, max(y) FROM group_ord GROUP BY x) JOIN (SELECT z, min(y) FROM group_ord@foo",55267,95444
+testdata/logic_test/views:63,SELECT * FROM v7,39037,46481
+testdata/logic_test/serial:59,"SELECT count(DISTINCT a), count(DISTINCT b), count(DISTINCT c) FROM smallbig",25399,43837
+testdata/logic_test/select:248,SELECT * FROM xyzw ORDER BY x OFFSET 1 + 0.0,13832,16981
+testdata/logic_test/optimizer:64,SELECT EXISTS(SELECT * FROM t WHERE k > 2),41569,40113
+testdata/logic_test/family:197,SELECT * FROM unsorted_colids,6920,8476
+testdata/logic_test/collatedstring_uniqueindex1:77,"SELECT a, b FROM t ORDER BY a, b",14245,17310
+testdata/logic_test/tuple:160,"SELECT * FROM t WHERE (a, b, c) > (1, 2, 3) AND (a, b, c) < (8, 9, 10) ORDER BY a, b, c",62773,74099
+testdata/logic_test/subquery:229,SELECT * FROM xyz,6041,7637
+testdata/logic_test/join:282,SELECT * FROM onecolumn NATURAL JOIN twocolumn,15925,44510
+testdata/logic_test/join:646,SELECT *   FROM (SELECT * FROM pairs LEFT JOIN square ON b = sq AND a > 1 AND n < 6)  WHERE b > 1 AN,91247,150416
+testdata/logic_test/order_by:252,SELECT a FROM abc ORDER BY a DESC OFFSET 1,14636,20569
+testdata/logic_test/computed:489,SELECT data->>'name' FROM x WHERE k = 5,24424,39873
+testdata/logic_test/array:739,SELECT count(b) FROM a,13203,22429
+testdata/logic_test/aggregate:545,"SELECT min(k), max(k), min(v), max(v) FROM kv",30797,43487
+testdata/logic_test/aggregate:736,SELECT max(y) FROM xyz WHERE x = 7,43498,85699
+testdata/logic_test/sequences:540,SELECT id FROM blog_posts ORDER BY id,7962,11724
+testdata/logic_test/distinct_on:193,"SELECT DISTINCT ON (x, z) y, z, x FROM xyz WHERE (x,y,z) != (4, 1, 6) ORDER BY z",46327,63368
+testdata/logic_test/computed:484,SELECT data->>'name' FROM x WHERE k = 2,23798,39793
+testdata/logic_test/aggregate:603,SELECT avg(k) * 2.0 + max(v)::DECIMAL FROM kv WHERE w*2 = k,54713,101818
+testdata/logic_test/txn:40,SELECT * FROM kv,5450,7554
+testdata/logic_test/suboperators:326,"SELECT 1 = ALL(SELECT * FROM unnest(ARRAY[1, NULL]))",13143,26159
+testdata/logic_test/storing:122,"SELECT a, b FROM t14601a ORDER BY a",11417,15524
+testdata/logic_test/select_index:74,"SELECT * FROM t12022@i WHERE (c1, c2) > (1, NULL) ORDER BY (c1, c2);",42451,54313
+testdata/logic_test/select:459,"SELECT (NULL::int, 2) NOT IN (SELECT * FROM (VALUES (1, 1)) AS t(a, b))",15910,47777
+testdata/logic_test/alter_table:650,SELECT count(distinct a) FROM impure,14299,27413
+testdata/logic_test/select_index:399,SELECT * FROM int WHERE a IS NOT DISTINCT FROM 2,22476,34544
+testdata/logic_test/select:587,SELECT x FROM b WHERE rowid > 0,18782,30038
+testdata/logic_test/interleaved:132,SELECT * FROM p0,7013,8930
+testdata/logic_test/distinct_on:224,SELECT DISTINCT ON (min(x)) max(y) FROM xyz,25595,53770
+testdata/logic_test/computed:533,SELECT d FROM x,7505,10352
+testdata/logic_test/suboperators:177,SELECT * FROM abc WHERE a < ANY(SELECT a FROM abc WHERE b = 30) ORDER BY a,40280,90883
+testdata/logic_test/optimizer:38,SELECT * FROM test.t,8498,8632
+testdata/logic_test/join:424,SELECT * FROM onecolumn JOIN (SELECT x + 2 AS x FROM onecolumn) USING(x),22075,59799
+testdata/logic_test/join:1039,"SELECT * FROM foo, bar WHERE foo.a = bar.a AND foo.b = bar.b",37239,70076
+testdata/logic_test/float:21,"SELECT f, f IS NaN, f = 'NaN', isnan(f) FROM p@{FORCE_INDEX=primary} ORDER BY 1",34621,48900
+testdata/logic_test/alias_types:43,SELECT b || 'cat' FROM aliases ORDER BY a,22722,36618
+testdata/logic_test/upsert:324,SELECT b FROM upsert_returning WHERE a = 1,22563,34974
+testdata/logic_test/txn:16,SELECT * FROM kv,5412,8060
+testdata/logic_test/select_index_flags:59,SELECT b FROM abcd@b WHERE a >= 20 AND a <= 30,31536,44556
+testdata/logic_test/select_index:326,SELECT * FROM bool1 WHERE a IS NOT NULL,20961,27964
+testdata/logic_test/order_by:118,"SELECT a, b FROM t ORDER BY b, a DESC",11453,15691
+testdata/logic_test/join:121,"SELECT * FROM onecolumn AS a FULL OUTER JOIN othercolumn AS b ON a.x = b.x ORDER BY a.x,b.x",23772,51128
+testdata/logic_test/select_index:431,SELECT * FROM noncover WHERE b = 2,26821,35314
+testdata/logic_test/parallel_stmts:272,"SELECT k, v FROM kv ORDER BY k",8700,10308
+testdata/logic_test/json:111,SELECT bar FROM foo,6261,10065
+testdata/logic_test/join:705,SELECT * FROM t1 FULL OUTER JOIN t2 USING(x),34871,50869
+testdata/logic_test/tuple:265,"SELECT (1, 2) IN (SELECT a, b FROM t ORDER BY 1 DESC, 2 DESC) AS r",25651,52130
+testdata/logic_test/select_index:386,SELECT * FROM bool2 WHERE a IS NOT FALSE,19484,30555
+testdata/logic_test/postgres_jsonb:94,SELECT test_json ->> 'field5' FROM test_jsonb WHERE json_type = 'object',26630,50658
+testdata/logic_test/collatedstring_constraint:40,SELECT a FROM c1 ORDER BY a,10668,12716
+testdata/logic_test/aggregate:636,"SELECT max(a), max(b), max(c), max(d) FROM abc",28917,41611
+testdata/logic_test/suboperators:306,"SELECT 1 = ALL(SELECT * FROM unnest(ARRAY[1,2,3]))",12652,29168
+testdata/logic_test/storing:35,"SELECT a, b, c, d FROM t@c_idx",10550,10827
+testdata/logic_test/select:78,"SELECT a,c FROM abc",8471,11479
+testdata/logic_test/join:238,SELECT * FROM empty AS a FULL OUTER JOIN onecolumn AS b USING(x) ORDER BY x,19595,57405
+testdata/logic_test/distinct_on:154,SELECT DISTINCT ON (b) b FROM abc,7141,14933
+testdata/logic_test/datetime:59,SELECT * FROM u ORDER BY a,11515,12081
+testdata/logic_test/system:437,"SELECT name, value FROM system.settings WHERE name NOT IN ('version', 'sql.defaults.distsql', 'clust",206699,199770
+testdata/logic_test/rows_from:13,"SELECT * FROM ROWS FROM (generate_series(1,4), generate_series(4,5))",6992,12875
+testdata/logic_test/limit:3,"SELECT generate_series FROM generate_series(1, 100) ORDER BY generate_series LIMIT 5;",7047,13791
+testdata/logic_test/array:586,SELECT b FROM a,5751,10800
+testdata/logic_test/select:96,SELECT * FROM abc WHERE a > 5 AND a < 5 AND b>=100,33566,34277
+testdata/logic_test/datetime:21,SELECT * FROM t WHERE a = '2015-08-25 04:45:45.53453+01:00'::timestamp,28386,34739
+testdata/logic_test/datetime:941,SELECT a FROM tz WHERE c = d,20801,35789
+testdata/logic_test/where:83,"SELECT * FROM kv WHERE k IN (1, 5.0, 9)",22089,29219
+testdata/logic_test/rename_column:67,SELECT * FROM users,6402,11137
+testdata/logic_test/order_by:431,"SELECT a, b, c FROM abc2 ORDER BY INDEX abc2@ba",18011,19134
+testdata/logic_test/select_index:321,SELECT * FROM bool1 WHERE a IS NULL,21500,29857
+testdata/logic_test/manual_retry:77,SELECT id FROM t,7129,8986
+testdata/logic_test/collatedstring_index2:41,"SELECT b, a FROM t ORDER BY b, a",11735,15597
+testdata/logic_test/collatedstring_uniqueindex2:31,"SELECT a, b FROM t ORDER BY a, b",13971,19056
+testdata/logic_test/aggregate:526,"SELECT count((k, v)) FROM kv LIMIT 1",17015,44104
+testdata/logic_test/rename_view:159,SELECT * FROM test2.v2,18616,19061
+testdata/logic_test/postgres_jsonb:74,SELECT test_json -> 2 FROM test_jsonb WHERE json_type = 'object',26783,47633
+testdata/logic_test/order_by:403,"SELECT a, b, c FROM abc2 ORDER BY PRIMARY KEY abc2",16700,18844
+testdata/logic_test/join:464,"SELECT * FROM (SELECT * FROM onecolumn), (SELECT * FROM onecolumn)",16290,25140
+testdata/logic_test/family:70,SELECT * FROM abcd,7108,10679
+testdata/logic_test/decimal:191,"SELECT d FROM s ORDER BY d, d::TEXT",13893,25505
+testdata/logic_test/suboperators:152,"SELECT 1.0 = ANY(SELECT * FROM unnest(ARRAY[1.0001, 2]))",14562,30781
+testdata/logic_test/select_index:89,"SELECT * FROM t12022@i WHERE (c1, c2) > (1, true) ORDER BY (c1, c2);",36613,49631
+testdata/logic_test/order_by:247,SELECT a FROM abc ORDER BY a DESC LIMIT 1,14548,20964
+testdata/logic_test/interleaved:70,SELECT * FROM p0,7150,8378
+testdata/logic_test/distsql_expr:10,"SELECT c FROM t WHERE (c, c) > (2, -9223372036854775808)",28020,37366
+testdata/logic_test/check_constraints:168,SELECT * FROM t5,6912,8649
+testdata/logic_test/upsert:217,SELECT * FROM abc,7064,11434
+testdata/logic_test/tuple:805,"SELECT (((1,'2',true) AS a,b,c)).* FROM tb",10449,19615
+testdata/logic_test/parallel_stmts:97,"SELECT k, v FROM kv ORDER BY k",8578,9887
+testdata/logic_test/parallel_stmts:122,"SELECT k, v FROM kv ORDER BY k",8588,11292
+testdata/logic_test/order_by:438,"SELECT a, b, c FROM abc2 ORDER BY INDEX abc2@ba DESC",17931,18958
+testdata/logic_test/computed:550,SELECT d FROM x,7426,11960
+testdata/logic_test/tuple:197,"SELECT (ROW(sqrt(100.0)), 'ab') = (ROW(pow(1, 10.0) + 9), 'a' || 'b') AS a   FROM tb",42905,60543
+testdata/logic_test/srfs:187,SELECT * FROM unnest(NULL),5243,7653
+testdata/logic_test/select_index:148,"SELECT   resource_key,   count(resource_key) total FROM favorites f1 WHERE f1.jurisdiction   = 'MT' ",141038,183442
+testdata/logic_test/select:495,"SELECT (1, NULL::int) NOT IN (SELECT * FROM (VALUES (1, 1)) AS t(a, b) WHERE a > 1)",23579,59621
+testdata/logic_test/json:122,SELECT bar FROM foo WHERE bar->>'a' = 'b',30460,34890
+testdata/logic_test/drop_database:123,SELECT * FROM d2.v2,20669,20059
+testdata/logic_test/postgresjoin:1856,"SELECT * FROM (SELECT name, n as s1_n, 1 as s1_1 FROM t1) as s1 NATURAL INNER JOIN (SELECT name, n a",51785,97459
+testdata/logic_test/order_by:50,SELECT a FROM t ORDER BY 1 DESC,9409,12804
+testdata/logic_test/drop_database:115,SELECT * FROM d1.v2,29967,30302
+testdata/logic_test/decimal:209,"SELECT d, d IS NaN, d = 'NaN', isnan(d) FROM s@{FORCE_INDEX=primary} ORDER BY d, d::TEXT",37697,59553
+testdata/logic_test/aggregate:877,SELECT json_agg(s) FROM (SELECT s FROM kv ORDER BY k),19291,32278
+testdata/logic_test/order_by:204,"SELECT generate_series, ARRAY[generate_series] FROM generate_series(1, 1) ORDER BY 1",10068,22507
+testdata/logic_test/deep_interleaving:110,SELECT * FROM level4 WHERE k1 = 2 AND k2 > 10 AND k2 < 30,43684,51257
+testdata/logic_test/collatedstring_index1:87,"SELECT b, a FROM t ORDER BY b, a",14440,18957
+testdata/logic_test/alter_table:479,"SELECT a,b FROM add_default WHERE current_timestamp > c AND current_timestamp() - c < interval '10s'",42572,54450
+testdata/logic_test/update:61,SELECT * FROM kview,20295,22516
+testdata/logic_test/set:211,"SELECT name, value FROM system.settings WHERE name = 'testing.str'",223757,191382
+testdata/logic_test/select_index:343,SELECT * FROM bool1 WHERE a IS FALSE,20180,32302
+testdata/logic_test/schema_change_in_txn:473,SELECT * FROM want,5962,10871
+testdata/logic_test/join:311,"SELECT o.x, t.y FROM onecolumn o LEFT OUTER JOIN twocolumn t ON (o.x=t.x AND o.x=44)",40517,79168
+testdata/logic_test/views:479,SELECT sum (Caps15951. a) FROM Caps15951 GROUP BY b ORDER BY b,39780,44438
+testdata/logic_test/txn:735,SELECT count(*) FROM kv WHERE k = 'savepoint',27424,42151
+testdata/logic_test/tuple:259,"SELECT (1, 2) IN (SELECT a, b FROM t ORDER BY 1 ASC, 2 ASC) AS r",25059,55024
+testdata/logic_test/join:393,"SELECT * FROM a FULL OUTER JOIN b ON a.i=b.i ORDER BY b.i, b.b",25451,50748
+testdata/logic_test/computed:448,"SELECT k, b FROM x ORDER BY b",11571,16687
+testdata/logic_test/datetime:946,SELECT a FROM tz WHERE c <= d,18811,30242
+testdata/logic_test/tuple:49,"SELECT   (2, 2) > (1, 1) AS a,   (2, 2) > (1, 2) AS b,   (2, 2) > (1, 3) AS c,   (2, 2) > (2, 1) AS ",81463,138879
+testdata/logic_test/truncate:12,SELECT * FROM kv,5200,8081
+testdata/logic_test/select_index_flags:82,"SELECT c, d FROM abcd@primary WHERE c >= 20 AND c < 40",31810,44751
+testdata/logic_test/select:91,SELECT * FROM abc WHERE a > 5 AND a < 5,24504,25030
+testdata/logic_test/float:114,"SELECT f, f::string FROM vals",9597,22705
+testdata/logic_test/distinct_on:125,"SELECT DISTINCT ON (a, c) a, b FROM abc ORDER BY a, c, b",21597,25859
+testdata/logic_test/tuple:617,"SELECT * FROM uvw WHERE (u, v, w) < (2, NULL, 3) ORDER BY u, v, w",44639,57408
+testdata/logic_test/select:103,"SELECT a,b FROM abc WHERE CASE WHEN a != 0 THEN b/a > 1.5 ELSE false END",42671,51496
+testdata/logic_test/delete:72,SELECT * FROM kv,5808,11694
+testdata/logic_test/alter_table:490,"SELECT a,b FROM add_default WHERE d > c AND d - c < interval '10s'",38204,46751
+testdata/logic_test/aggregate:318,"SELECT count(*), upper(s) FROM kv GROUP BY s",19781,41045
+testdata/logic_test/aggregate:716,SELECT max(x) FROM xyz,27675,50639
+testdata/logic_test/aggregate:987,SELECT max(v) FROM opt_test GROUP BY k,14458,30448
+testdata/logic_test/aggregate:1041,"SELECT (b, a) FROM ab GROUP BY (b, a)",18739,27823
+testdata/logic_test/upsert:239,"SELECT * FROM abc ORDER BY (a, b, c)",18621,19036
+testdata/logic_test/update:137,SELECT * FROM kv3,5709,7763
+testdata/logic_test/union:138,SELECT v FROM uniontest WHERE k = 1 UNION SELECT v FROM uniontest WHERE k = 2,40798,98560
+testdata/logic_test/join:298,"SELECT o.x, t.y FROM onecolumn o INNER JOIN twocolumn t ON (o.x=t.x AND t.y=53)",38633,85858
+testdata/logic_test/computed:190,"SELECT a, b, c FROM x",10966,11926
+testdata/logic_test/collatedstring_index2:133,"SELECT b, a FROM t ORDER BY b, a",13491,19250
+testdata/logic_test/statement_source:46,SELECT * FROM a ORDER BY b,7650,11404
+testdata/logic_test/select_index:302,SELECT e FROM ef WHERE f > 0 AND f < 2 ORDER BY f,45941,63125
+testdata/logic_test/join:1046,"SELECT * FROM foo JOIN bar USING (a, b) WHERE foo.c = bar.c AND foo.d = bar.d",47508,123317
+testdata/logic_test/computed:670,SELECT * FROM x ORDER BY a,11074,14231
+testdata/logic_test/aggregate:156,"SELECT min(1), count(1), max(1), sum_int(1), avg(1)::float, sum(1), stddev(1), variance(1)::float, b",59983,131566
+testdata/logic_test/select_index_flags:67,SELECT b FROM abcd@b WHERE c >= 20 AND c <= 30,41287,52896
+testdata/logic_test/select:539,SELECT x + 1 FROM a,10461,24929
+testdata/logic_test/order_by:235,SELECT d FROM abc ORDER BY lower(d),12413,24906
+testdata/logic_test/order_by:343,"SELECT * FROM store ORDER BY baz, extra",15883,13488
+testdata/logic_test/join:190,SELECT * FROM empty AS a(x) JOIN onecolumn AS b(y) ON a.x = b.y,20206,53695
+testdata/logic_test/join:349,SELECT * FROM a LEFT OUTER JOIN b ON a.i = b.i,21241,44213
+testdata/logic_test/drop_table:18,SELECT * FROM a,4659,7241
+testdata/logic_test/upsert:99,"SELECT * FROM kv ORDER BY (k, v)",11845,16193
+testdata/logic_test/union:245,SELECT a FROM a WHERE a > 2 UNION ALL (SELECT a FROM c WHERE b > 2) LIMIT 1;,36773,59955
+testdata/logic_test/suboperators:321,"SELECT 1 = ALL(SELECT * FROM unnest(ARRAY[2, NULL]))",13505,27713
+testdata/logic_test/serial:224,"SELECT count(DISTINCT a), count(DISTINCT b), count(DISTINCT c) FROM serial",20678,37085
+testdata/logic_test/multi_statement:48,SELECT * FROM kv,5661,8342
+testdata/logic_test/json:169,"SELECT bar->'a'->'c', bar->'a'->>'c' FROM foo",17230,33918
+testdata/logic_test/aggregate:763,SELECT variance(x) FROM xyz WHERE x = 1,28477,54598
+testdata/logic_test/txn:53,SELECT * FROM kv,5556,7519
+testdata/logic_test/tuple:190,"SELECT (ROW(pow(1, 10.0) + 9), 'a' || 'b') = (ROW(sqrt(100.0)), 'ab') AS a   FROM tb",43055,60747
+testdata/logic_test/join:582,"SELECT * FROM pairs, square WHERE pairs.b = square.n",19155,53570
+testdata/logic_test/join:732,"SELECT t2.x, t1.x, x FROM t1 JOIN t2 USING(x)",26421,50996
+testdata/logic_test/computed:180,"SELECT a, b, c FROM x",11034,11180
+testdata/logic_test/collatedstring_uniqueindex1:119,"SELECT b, a FROM t ORDER BY b, a",14140,18322
+testdata/logic_test/tuple:233,"SELECT 'foo' IN (x, 'aaa') AS r FROM (SELECT 'foo' AS x FROM tb)",12882,34914
+testdata/logic_test/srfs:58,"SELECT * FROM generate_series(3, 1)",4801,8369
+testdata/logic_test/select_table_alias:104,"SELECT * FROM ab AS foo (foo1, foo2)",6897,10879
+testdata/logic_test/postgres_jsonb:44,SELECT test_json ->> 'field2' FROM test_jsonb WHERE json_type = 'scalar',27190,48140
+testdata/logic_test/aggregate:140,"SELECT (SELECT COALESCE(max(1), 0) FROM generate_series(1,0))",24409,67877
+testdata/logic_test/postgresjoin:1806,SELECT * FROM t1 FULL JOIN t2 USING (name) FULL JOIN t3 USING (name),36932,83097
+testdata/logic_test/postgresjoin:1841,"SELECT * FROM (SELECT name, n as s2_n, 2 as s2_2 FROM t2) as s2 NATURAL LEFT JOIN (SELECT name, n as",38345,58851
+testdata/logic_test/update:38,SELECT * FROM kv,5575,7812
+testdata/logic_test/typing:41,SELECT * FROM d,5199,9304
+testdata/logic_test/show_trace:372,"SELECT operation,        regexp_replace(regexp_replace(message, 'mutationJobs:<[^>]*>', 'mutationJob",27171,55382
+testdata/logic_test/show_trace:462,"SELECT message FROM [SHOW TRACE FOR SESSION] WHERE message LIKE e'%1 CPut, 1 BeginTxn, 1 EndTxn%'",8292,15356
+testdata/logic_test/select_table_alias:59,"SELECT * FROM abc AS foo (foo1, foo2) WHERE foo.foo1 = 1",21676,29926
+testdata/logic_test/select_index_flags:90,"SELECT c, d FROM abcd@b WHERE c >= 20 AND c < 40",35081,50089
+testdata/logic_test/builtin_function:1262,"SELECT greatest(NULL, NULL, NULL, a, -1) FROM foo",12371,27207
+testdata/logic_test/aggregate:270,"SELECT count(*), s FROM kv GROUP BY s",17315,26528
+testdata/logic_test/limit:68,"SELECT k, v FROM t ORDER BY k OFFSET 5",13549,20150
+testdata/logic_test/join:690,SELECT * FROM t1 JOIN t2 USING(x),31363,47546
+testdata/logic_test/drop_index:102,SELECT * FROM users,6724,7730
+testdata/logic_test/distinct_on:73,"SELECT DISTINCT ON (b, c, a) a, c, b FROM abc",11820,14233
+testdata/logic_test/distinct:114,"SELECT DISTINCT (y,z) FROM xyz",9074,28258
+testdata/logic_test/collatedstring_uniqueindex2:44,"SELECT b, a FROM t ORDER BY b, a",14044,18891
+testdata/logic_test/upsert:506,SELECT * FROM tu,7021,10080
+testdata/logic_test/show_trace:352,"SELECT operation, message FROM [SHOW KV TRACE FOR SESSION]",6397,7565
+testdata/logic_test/limit:91,"SELECT sum(w) FROM t GROUP BY k, v ORDER BY v DESC LIMIT 10",22811,52424
+testdata/logic_test/deep_interleaving:66,SELECT * FROM level4,6095,8673

@@ -744,16 +744,57 @@ func enhanceErrWithCorrelation(err error, isCorrelated bool) {
 func (ex *connExecutor) dispatchToExecutionEngine(
 	ctx context.Context, stmt Statement, planner *planner, res RestrictedCommandResult,
 ) error {
-
 	ex.sessionTracing.TracePlanStart(ctx, stmt.AST.StatementTag())
+
+	isSelect := false
+	switch stmt.AST.(type) {
+	case *tree.ParenSelect, *tree.Select, *tree.SelectClause,
+		*tree.UnionClause, *tree.ValuesClause:
+			s := stmt.String()
+			if strings.Contains(s, "FROM") && !strings.Contains(s, "._pg") && !strings.Contains(s, " _pg") && !strings.Contains(s, "information_schema") && !strings.Contains(s, "crdb_internal") {
+				isSelect = true
+			}
+	}
+
+	setLastPlanningTime := false
+	const iters = 20
+	min := time.Duration(0)
+
 	planner.statsCollector.PhaseTimes()[plannerStartLogicalPlan] = timeutil.Now()
 
 	optimizerPlanned, err := planner.optionallyUseOptimizer(ctx, ex.sessionData, stmt)
+	if isSelect && optimizerPlanned && err == nil {
+		for i := 0; i < iters; i++ {
+			planner.curPlan.close(ctx)
+			start := timeutil.Now()
+			optimizerPlanned, err = planner.optionallyUseOptimizer(ctx, ex.sessionData, stmt)
+			dur := timeutil.Now().Sub(start)
+			if min == 0 || dur < min {
+				min = dur
+			}
+			setLastPlanningTime = (err == nil)
+		}
+	}
+
 	if !optimizerPlanned && err == nil {
 		isCorrelated := planner.curPlan.isCorrelated
 		log.VEventf(ctx, 1, "query is correlated: %v", isCorrelated)
 		// Fallback if the optimizer was not enabled or used.
 		err = planner.makePlan(ctx, stmt)
+		if isSelect && err == nil && ex.sessionData.OptimizerMode == sessiondata.OptimizerOff {
+			start := timeutil.Now()
+			planner.statsCollector.PhaseTimes()[plannerStartLogicalPlan] = start
+			for i := 0; i < iters; i++ {
+				planner.curPlan.close(ctx)
+				start := timeutil.Now()
+				err = planner.makePlan(ctx, stmt)
+				dur := timeutil.Now().Sub(start)
+				if min == 0 || dur < min {
+					min = dur
+				}
+				setLastPlanningTime = (err == nil)
+			}
+		}
 		enhanceErrWithCorrelation(err, isCorrelated)
 	}
 	defer planner.curPlan.close(ctx)
@@ -761,6 +802,7 @@ func (ex *connExecutor) dispatchToExecutionEngine(
 	defer func() { planner.maybeLogStatement(ctx, "exec", res.RowsAffected(), res.Err()) }()
 
 	planner.statsCollector.PhaseTimes()[plannerEndLogicalPlan] = timeutil.Now()
+
 	ex.sessionTracing.TracePlanEnd(ctx, err)
 	if err != nil {
 		res.SetError(err)
@@ -822,6 +864,13 @@ func (ex *connExecutor) dispatchToExecutionEngine(
 	)
 	if ex.server.cfg.TestingKnobs.AfterExecute != nil {
 		ex.server.cfg.TestingKnobs.AfterExecute(ctx, stmt.String(), res.Err())
+	}
+
+	if setLastPlanningTime {
+		ex.sessionData.LastPlanningTime = int64(min)
+		//fmt.Printf("%s: %d\n", stmt.String(), ex.sessionData.LastPlanningTime)
+	} else {
+		ex.sessionData.LastPlanningTime = 0
 	}
 
 	return nil

@@ -76,6 +76,8 @@ type SessionData struct {
 	SequenceState *SequenceState
 	// DataConversion gives access to the data conversion configuration.
 	DataConversion DataConversionConfig
+
+	LastPlanningTime int64
 }
 
 // DataConversionConfig contains the parameters that influence

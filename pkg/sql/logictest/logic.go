@@ -801,6 +801,8 @@ type logicTest struct {
 
 	curPath   string
 	curLineNo int
+
+	csvFile *os.File
 }
 
 func (t *logicTest) traceStart(filename string) {
@@ -1071,6 +1073,9 @@ func readTestFileConfigs(t *testing.T, path string) []logicTestConfigIdx {
 			}
 			var configs []logicTestConfigIdx
 			for _, configName := range fields[2:] {
+				//if configName != "local" {
+				//	continue
+				//}
 				idx, ok := findLogicTestConfig(configName)
 				if !ok {
 					t.Fatalf("%s: unknown config name %s", path, configName)
@@ -1712,6 +1717,29 @@ func (t *logicTest) hashResults(results []string) (string, error) {
 	return fmt.Sprintf("%x", h.Sum(nil)), nil
 }
 
+func (t *logicTest) recordTiming(query logicQuery) {
+	rows, err := t.db.Query("select crdb_internal.get_last_planning_time();")
+	if err != nil {
+		fmt.Println("!!!!!!!!!! got timing error")
+		return
+	}
+	defer rows.Close()
+
+	var timing interface{}
+	rows.Next()
+	if err := rows.Scan(&timing); err != nil {
+		fmt.Println("!!!!!!!!!! got row scan error")
+		return
+	}
+
+	pos := strings.Replace(query.pos, "\n", "", -1)
+	sql := strings.Replace(query.sql, "\n", " ", -1)
+
+	if timing.(int64) != 0 && !strings.Contains(sql, `"`) {
+		fmt.Fprintf(t.csvFile, "%s,%s,\"%s\",%v\n", t.cfg.name, pos, sql, timing)
+	}
+}
+
 func (t *logicTest) execQuery(query logicQuery) error {
 	if *showSQL {
 		t.outf("%s;", query.sql)
@@ -1920,6 +1948,8 @@ func (t *logicTest) execQuery(query logicQuery) error {
 		t.labelMap[query.label] = hash
 	}
 
+	t.recordTiming(query)
+
 	t.finishOne("OK")
 	return nil
 }
@@ -2033,6 +2063,12 @@ func RunLogicTest(t *testing.T, globs ...string) {
 	logScope := log.Scope(t)
 	defer logScope.Close(t)
 
+	csvFile, err := os.Create("/Users/andy/go/src/github.com/cockroachdb/cockroach/cockroach-data/extern/timings.csv")
+	if err != nil {
+		panic(err)
+	}
+	defer csvFile.Close()
+
 	verbose := testing.Verbose() || log.V(1)
 	for idx, cfg := range logicTestConfigs {
 		paths := configPaths[idx]
@@ -2068,6 +2104,7 @@ func RunLogicTest(t *testing.T, globs ...string) {
 						t:               t,
 						verbose:         verbose,
 						perErrorSummary: make(map[string][]string),
+						csvFile:         csvFile,
 					}
 					if *printErrorSummary {
 						defer lt.printErrorSummary()

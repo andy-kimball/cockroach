@@ -2749,6 +2749,19 @@ may increase either contention or retry errors, or both.`,
 		},
 	),
 
+	"crdb_internal.get_last_planning_time": makeBuiltin(
+		tree.FunctionProperties{Category: categorySystemInfo},
+		tree.Overload{
+			Types:      tree.ArgTypes{},
+			ReturnType: tree.FixedReturnType(types.Int),
+			Fn: func(ctx *tree.EvalContext, args tree.Datums) (tree.Datum, error) {
+				time := tree.DInt(ctx.SessionData.LastPlanningTime)
+				return &time, nil
+			},
+			Info: "Returns planning time of last SQL statement in this session.",
+		},
+	),
+
 	"crdb_internal.cluster_id": makeBuiltin(
 		tree.FunctionProperties{Category: categorySystemInfo},
 		tree.Overload{

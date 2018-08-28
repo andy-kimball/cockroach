@@ -716,7 +716,7 @@ func (v *NormalizeVisitor) VisitPost(expr Expr) Expr {
 
 	// Evaluate all constant expressions.
 	if v.isConst(expr) {
-		if _, ok := expr.(*Placeholder); ok {
+/*		if _, ok := expr.(*Placeholder); ok {
 			return expr
 		}
 		value, err := expr.(TypedExpr).Eval(v.ctx)
@@ -737,7 +737,8 @@ func (v *NormalizeVisitor) VisitPost(expr Expr) Expr {
 			}
 			return newExpr
 		}
-		return value
+		return value*/
+		return expr
 	}
 
 	return expr

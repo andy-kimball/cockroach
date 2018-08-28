@@ -84,9 +84,13 @@ type benchQuery struct {
 var schemas = [...]string{
 	`CREATE TABLE kv (k BIGINT NOT NULL PRIMARY KEY, v BYTES NOT NULL)`,
 	`CREATE TABLE abc (a INT PRIMARY KEY, b INT, c INT, INDEX(b), UNIQUE INDEX(c))`,
+	`
+CREATE TABLE onecolumn (x INT)
+`,
 }
 
 var queries = [...]benchQuery{
+	{"test", `SELECT * FROM onecolumn AS a NATURAL LEFT OUTER JOIN onecolumn AS b`},
 	{"kv-read", `SELECT k, v FROM kv WHERE k IN (5)`},
 	{"planning1", `SELECT * FROM abc`},
 	{"planning2", `SELECT * FROM abc WHERE a > 5 ORDER BY a`},
