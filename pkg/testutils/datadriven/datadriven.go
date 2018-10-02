@@ -78,6 +78,10 @@ func RunTest(t *testing.T, path string, f func(d *TestData) string) {
 			return f(d)
 		}()
 
+		if actual == "IGNORE" {
+			actual = d.Expected
+		}
+
 		if r.rewrite != nil {
 			r.emit("----")
 			if hasBlankLine(actual) {
