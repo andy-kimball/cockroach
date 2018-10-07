@@ -1,7 +1,7 @@
 #
 # Test invalid flags.
 #
-optgen -unknown exprs
+optgen -unknown nodes
 ----
 ----
 flag provided but not defined: -unknown
@@ -17,8 +17,8 @@ The commands are:
 
 	compile    generate the optgen compiled format
 	explorer   generate expression tree exploration rules
-	exprs      generate expression definitions and functions
 	factory    generate expression tree creation and normalization functions
+	nodes      generate node definitions and functions
 	ops        generate operator definitions and functions
 	rulenames  generate enumeration of rule names
 
@@ -34,7 +34,7 @@ Flags:
 #
 # Test insufficient arguments.
 #
-optgen exprs
+optgen nodes
 ----
 ----
 Optgen is a tool for generating cost-based optimizers.
@@ -49,8 +49,8 @@ The commands are:
 
 	compile    generate the optgen compiled format
 	explorer   generate expression tree exploration rules
-	exprs      generate expression definitions and functions
 	factory    generate expression tree creation and normalization functions
+	nodes      generate node definitions and functions
 	ops        generate operator definitions and functions
 	rulenames  generate enumeration of rule names
 
@@ -82,8 +82,8 @@ The commands are:
 
 	compile    generate the optgen compiled format
 	explorer   generate expression tree exploration rules
-	exprs      generate expression definitions and functions
 	factory    generate expression tree creation and normalization functions
+	nodes      generate node definitions and functions
 	ops        generate operator definitions and functions
 	rulenames  generate enumeration of rule names
 
@@ -100,13 +100,14 @@ ERROR: unrecognized command
 #
 # Test invalid source.
 #
-optgen exprs invalid-source
+optgen nodes invalid-source
 ----
 ERROR: invalid source
+
 
 #
 # Test invalid filename.
 #
-optgen exprs test.opt not-found.opt
+optgen nodes test.opt not-found.opt
 ----
 invalid filename

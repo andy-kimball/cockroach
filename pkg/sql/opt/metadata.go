@@ -91,7 +91,9 @@ var tableAnnIDCount TableAnnID
 // called. Calling more than this number of times results in a panic. Having
 // a maximum enables a static annotation array to be inlined into the metadata
 // table struct.
-const maxTableAnnIDCount = 2
+
+// TODO(andyk): Change this back before checkin
+const maxTableAnnIDCount = 4
 
 // Metadata assigns unique ids to the columns, tables, and other metadata used
 // within the scope of a particular query. Because it is specific to one query,
@@ -182,8 +184,10 @@ func (md *Metadata) Init() {
 
 // InitFrom initializes the metadata with a copy of the provided metadata. This
 // metadata can then be modified independent of the copied metadata.
-func (md *Metadata) InitFrom(from *Metadata) {
-	md.Init()
+func (md *Metadata) AddMetadata(from *Metadata) {
+	if len(md.cols) != 0 || len(md.tables) != 0 || len(md.deps) != 0 {
+		panic("AddMetadata not supported when destination metadata is not empty")
+	}
 	md.cols = append(md.cols, from.cols...)
 	md.tables = append(md.tables, from.tables...)
 	md.deps = append(md.deps, from.deps...)

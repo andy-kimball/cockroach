@@ -1,0 +1,618 @@
+// Copyright 2018 The Cockroach Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+// implied. See the License for the specific language governing
+// permissions and limitations under the License.
+
+package memo
+
+import (
+	"bytes"
+	"fmt"
+	"unicode"
+
+	"github.com/cockroachdb/cockroach/pkg/sql/opt"
+	"github.com/cockroachdb/cockroach/pkg/sql/opt/props"
+	"github.com/cockroachdb/cockroach/pkg/sql/sem/types"
+	"github.com/cockroachdb/cockroach/pkg/util/treeprinter"
+)
+
+// NodeFmtInterceptor is a callback that can be set to a custom formatting
+// function. If the function returns true, the normal formatting code is bypassed.
+var NodeFmtInterceptor func(f *NodeFmtCtx, tp treeprinter.Node, nd opt.Node) bool
+
+// NodeFmtFlags controls which properties of the expression are shown in
+// formatted output.
+type NodeFmtFlags int
+
+const (
+	// NodeFmtShowAll shows all properties of the node.
+	NodeFmtShowAll NodeFmtFlags = 0
+
+	// NodeFmtHideMiscProps does not show outer columns, row cardinality, or
+	// side effects in the output.
+	NodeFmtHideMiscProps NodeFmtFlags = 1 << (iota - 1)
+
+	// NodeFmtHideConstraints does not show inferred constraints in the output.
+	NodeFmtHideConstraints
+
+	// NodeFmtHideFuncDeps does not show functional dependencies in the output.
+	NodeFmtHideFuncDeps
+
+	// NodeFmtHideRuleProps does not show rule-specific properties in the output.
+	NodeFmtHideRuleProps
+
+	// NodeFmtHideStats does not show statistics in the output.
+	NodeFmtHideStats
+
+	// NodeFmtHideCost does not show expression cost in the output.
+	NodeFmtHideCost
+
+	// NodeFmtHideQualifications removes the qualification from column labels
+	// (except when a shortened name would be ambiguous).
+	NodeFmtHideQualifications
+
+	// NodeFmtHideScalars removes subtrees that contain only scalars and replaces
+	// them with the SQL expression (if possible).
+	NodeFmtHideScalars
+
+	// NodeFmtHideAll shows only the most basic properties of the node.
+	NodeFmtHideAll NodeFmtFlags = (1 << iota) - 1
+)
+
+// HasFlags tests whether the given flags are all set.
+func (f NodeFmtFlags) HasFlags(subset NodeFmtFlags) bool {
+	return f&subset == subset
+}
+
+func FormatNode(nd opt.Node, flags NodeFmtFlags) string {
+	var mem *Memo
+	if nd, ok := nd.(RelNode); ok {
+		mem = nd.Memo()
+	}
+	f := MakeNodeFmtCtx(flags, mem)
+	f.FormatNode(nd)
+	return f.Buffer.String()
+}
+
+// NodeFmtCtx contains data relevant to formatting routines.
+type NodeFmtCtx struct {
+	Buffer *bytes.Buffer
+
+	// Flags controls how the node is formatted.
+	Flags NodeFmtFlags
+
+	// Memo must contain any node that is formatted.
+	Memo *Memo
+}
+
+// MakeNodeFmtCtx creates a node formatting context from an existing buffer.
+func MakeNodeFmtCtx(flags NodeFmtFlags, mem *Memo) NodeFmtCtx {
+	return NodeFmtCtx{Buffer: &bytes.Buffer{}, Flags: flags, Memo: mem}
+}
+
+func MakeNodeFmtCtxBuffer(buf *bytes.Buffer, flags NodeFmtFlags, mem *Memo) NodeFmtCtx {
+	return NodeFmtCtx{Buffer: buf, Flags: flags, Memo: mem}
+}
+
+// HasFlags tests whether the given flags are all set.
+func (f *NodeFmtCtx) HasFlags(subset NodeFmtFlags) bool {
+	return f.Flags.HasFlags(subset)
+}
+
+// FormatNode constructs a treeprinter view of the given node for testing and
+// debugging, according to the flags in this context.
+func (f *NodeFmtCtx) FormatNode(nd opt.Node) {
+	tp := treeprinter.New()
+	f.formatNode(nd, tp)
+	f.Buffer.Reset()
+	f.Buffer.WriteString(tp.String())
+}
+
+func (f *NodeFmtCtx) formatNode(nd opt.Node, tp treeprinter.Node) {
+	if NodeFmtInterceptor != nil && NodeFmtInterceptor(f, tp, nd) {
+		return
+	}
+
+	scalar, ok := nd.(opt.ScalarExpr)
+	if ok {
+		f.formatScalar(scalar, tp)
+	} else {
+		f.formatRelational(nd.(RelNode), tp)
+	}
+}
+
+func (f *NodeFmtCtx) formatRelational(nd RelNode, tp treeprinter.Node) {
+	relational := nd.Relational()
+	physical := nd.Physical()
+	if physical == nil {
+		// Physical can be nil before optimization has taken place.
+		physical = &props.MinPhysProps
+	}
+
+	// Special cases for merge-join and lookup-join: we want the type of the join
+	// to show up first.
+	f.Buffer.Reset()
+	switch t := nd.(type) {
+	case *MergeJoinNode:
+		fmt.Fprintf(f.Buffer, "%v (merge)", t.JoinType)
+
+	case *LookupJoinNode:
+		fmt.Fprintf(f.Buffer, "%v (lookup", t.JoinType)
+		formatPrivate(f, nd.Private(), physical)
+		f.Buffer.WriteByte(')')
+
+	case *ScanNode, *VirtualScanNode, *IndexJoinNode, *ShowTraceForSessionNode:
+		fmt.Fprintf(f.Buffer, "%v", nd.Op())
+		formatPrivate(f, nd.Private(), physical)
+
+	default:
+		fmt.Fprintf(f.Buffer, "%v", nd.Op())
+	}
+
+	tp = tp.Child(f.Buffer.String())
+
+	// If a particular column presentation is required of the expression, then
+	// print columns using that information.
+	if !physical.Presentation.Any() {
+		f.formatPresentation(nd, tp, physical.Presentation)
+	} else {
+		// Special handling to improve the columns display for certain ops.
+		switch t := nd.(type) {
+		case *ProjectNode:
+			// We want the synthesized column IDs to map 1-to-1 to the projections,
+			// and the pass-through columns at the end.
+
+			// Get the list of columns from the ProjectionsOp, which has the natural
+			// order.
+			var colList opt.ColList
+			for i := range t.Projections {
+				colList = append(colList, t.Projections[i].Col)
+			}
+
+			// Add pass-through columns.
+			t.Passthrough.ForEach(func(i int) {
+				colList = append(colList, opt.ColumnID(i))
+			})
+
+			f.formatColList(nd, tp, "columns:", colList)
+
+		case *ValuesNode:
+			f.formatColList(nd, tp, "columns:", t.Cols)
+
+		case *UnionNode, *IntersectNode, *ExceptNode,
+			*UnionAllNode, *IntersectAllNode, *ExceptAllNode:
+			private := nd.Private().(*SetPrivate)
+			f.formatColList(nd, tp, "columns:", private.OutCols)
+
+		default:
+			// Fall back to writing output columns in column id order, with
+			// best guess label.
+			f.formatColSet(nd, tp, "columns:", nd.Relational().OutputCols)
+		}
+	}
+
+	switch t := nd.(type) {
+	// Special-case handling for GroupBy private; print grouping columns
+	// and internal ordering in addition to full set of columns.
+	case *GroupByNode, *ScalarGroupByNode, *DistinctOnNode:
+		private := nd.Private().(*GroupingPrivate)
+		if !private.GroupingCols.Empty() {
+			f.formatColSet(nd, tp, "grouping columns:", private.GroupingCols)
+		}
+		if !private.Ordering.Any() {
+			tp.Childf("internal-ordering: %s", private.Ordering)
+		}
+
+	case *LimitNode:
+		if !t.Ordering.Any() {
+			tp.Childf("internal-ordering: %s", t.Ordering)
+		}
+
+	case *OffsetNode:
+		if !t.Ordering.Any() {
+			tp.Childf("internal-ordering: %s", t.Ordering)
+		}
+
+	// Special-case handling for set operators to show the left and right
+	// input columns that correspond to the output columns.
+	case *UnionNode, *IntersectNode, *ExceptNode,
+		*UnionAllNode, *IntersectAllNode, *ExceptAllNode:
+		private := nd.Private().(*SetPrivate)
+		f.formatColList(nd, tp, "left columns:", private.LeftCols)
+		f.formatColList(nd, tp, "right columns:", private.RightCols)
+
+	case *ScanNode:
+		if t.Constraint != nil {
+			tp.Childf("constraint: %s", t.Constraint)
+		}
+		if t.HardLimit.IsSet() {
+			tp.Childf("limit: %s", t.HardLimit)
+		}
+		if !t.Flags.Empty() {
+			if t.Flags.NoIndexJoin {
+				tp.Childf("flags: no-index-join")
+			} else if t.Flags.ForceIndex {
+				idx := f.Memo.Metadata().Table(t.Table).Index(t.Flags.Index)
+				tp.Childf("flags: force-index=%s", idx.IdxName())
+			}
+		}
+
+	case *LookupJoinNode:
+		idxCols := make(opt.ColList, len(t.KeyCols))
+		idx := f.Memo.Metadata().Table(t.Table).Index(t.Index)
+		for i := range idxCols {
+			idxCols[i] = t.Table.ColumnID(idx.Column(i).Ordinal)
+		}
+		tp.Childf("key columns: %v = %v", t.KeyCols, idxCols)
+
+	case *MergeJoinNode:
+		tp.Childf("left ordering: %s", t.LeftEq)
+		tp.Childf("right ordering: %s", t.RightEq)
+	}
+
+	if !f.HasFlags(NodeFmtHideMiscProps) {
+		if !relational.OuterCols.Empty() {
+			tp.Childf("outer: %s", relational.OuterCols.String())
+		}
+		if relational.Cardinality != props.AnyCardinality {
+			// Suppress cardinality for Scan ops if it's redundant with Limit field.
+			if scan, ok := nd.(*ScanNode); !ok || !scan.HardLimit.IsSet() {
+				tp.Childf("cardinality: %s", relational.Cardinality)
+			}
+		}
+
+		if relational.CanHaveSideEffects {
+			tp.Child("side-effects")
+		}
+		if relational.HasPlaceholder {
+			tp.Child("has-placeholder")
+		}
+	}
+
+	if !f.HasFlags(NodeFmtHideStats) {
+		tp.Childf("stats: %s", &relational.Stats)
+	}
+
+	if !f.HasFlags(NodeFmtHideCost) {
+		cost := nd.Cost()
+		if cost != 0 {
+			tp.Childf("cost: %.9g", cost)
+		}
+	}
+
+	// Format functional dependencies.
+	if !f.HasFlags(NodeFmtHideFuncDeps) {
+		// Show the key separately from the rest of the FDs. Do this by copying
+		// the FD to the stack (fast shallow copy), and then calling ClearKey.
+		fd := relational.FuncDeps
+		key, ok := fd.Key()
+		if ok {
+			tp.Childf("key: %s", key)
+		}
+		fd.ClearKey()
+		if !fd.Empty() {
+			tp.Childf("fd: %s", fd)
+		}
+	}
+
+	if !physical.Ordering.Any() {
+		tp.Childf("ordering: %s", physical.Ordering.String())
+	}
+
+	if !f.HasFlags(NodeFmtHideRuleProps) {
+		r := &relational.Rule
+		if !r.PruneCols.Empty() {
+			tp.Childf("prune: %s", r.PruneCols.String())
+		}
+		if !r.RejectNullCols.Empty() {
+			tp.Childf("reject-nulls: %s", r.RejectNullCols.String())
+		}
+		if len(r.InterestingOrderings) > 0 {
+			tp.Childf("interesting orderings: %s", r.InterestingOrderings.String())
+		}
+	}
+
+	for i, n := 0, nd.ChildCount(); i < n; i++ {
+		f.formatNode(nd.Child(i), tp)
+	}
+}
+
+func (f *NodeFmtCtx) formatScalar(scalar opt.ScalarExpr, tp treeprinter.Node) {
+	switch scalar.Op() {
+	case opt.ProjectionsOp, opt.AggregationsOp:
+		// Omit empty Projections and Aggregations expressions.
+		if scalar.ChildCount() == 0 {
+			return
+		}
+	}
+
+	// Don't show scalar-list, as it's redundant with its parent.
+	if scalar.Op() != opt.ScalarListOp {
+		f.Buffer.Reset()
+		propsExpr := scalar
+		switch scalar.Op() {
+		case opt.FiltersItemOp, opt.ProjectionsItemOp, opt.AggregationsItemOp:
+			// Use properties from the item, but otherwise omit it from output.
+			scalar = scalar.Child(0).(opt.ScalarExpr)
+		}
+
+		fmt.Fprintf(f.Buffer, "%v", scalar.Op())
+		f.formatScalarPrivate(scalar)
+		f.FormatScalarProps(propsExpr)
+		tp = tp.Child(f.Buffer.String())
+	}
+
+	for i, n := 0, scalar.ChildCount(); i < n; i++ {
+		f.formatNode(scalar.Child(i), tp)
+	}
+}
+
+// FormatScalarProps writes out a string representation of the scalar
+// properties (with a preceding space); for example:
+//  " [type=bool, outer=(1), constraints=(/1: [/1 - /1]; tight)]"
+func (f *NodeFmtCtx) FormatScalarProps(scalar opt.ScalarExpr) {
+	// Don't panic if scalar properties don't yet exist when printing
+	// expression.
+	typ := scalar.DataType()
+	if typ == nil {
+		f.Buffer.WriteString(" [type=undefined]")
+	} else {
+		first := true
+		writeProp := func(format string, args ...interface{}) {
+			if first {
+				f.Buffer.WriteString(" [")
+				first = false
+			} else {
+				f.Buffer.WriteString(", ")
+			}
+			fmt.Fprintf(f.Buffer, format, args...)
+		}
+
+		if typ != types.Any {
+			writeProp("type=%s", typ)
+		}
+
+		if propsExpr, ok := scalar.(ScalarPropsExpr); ok && f.Memo != nil {
+			scalarProps := propsExpr.ScalarProps(f.Memo)
+			if !f.HasFlags(NodeFmtHideMiscProps) {
+				if !scalarProps.OuterCols.Empty() {
+					writeProp("outer=%s", scalarProps.OuterCols)
+				}
+				if scalarProps.CanHaveSideEffects {
+					writeProp("side-effects")
+				}
+			}
+
+			if !f.HasFlags(NodeFmtHideConstraints) {
+				if scalarProps.Constraints != nil && !scalarProps.Constraints.IsUnconstrained() {
+					writeProp("constraints=(%s", scalarProps.Constraints)
+					if scalarProps.TightConstraints {
+						f.Buffer.WriteString("; tight")
+					}
+					f.Buffer.WriteString(")")
+				}
+			}
+
+			if !f.HasFlags(NodeFmtHideFuncDeps) && !scalarProps.FuncDeps.Empty() {
+				writeProp("fd=%s", scalarProps.FuncDeps)
+			}
+		}
+
+		if !first {
+			f.Buffer.WriteString("]")
+		}
+	}
+}
+
+func (f *NodeFmtCtx) formatScalarPrivate(scalar opt.ScalarExpr) {
+	var private interface{}
+	switch t := scalar.(type) {
+	case *NullExpr, *TupleExpr:
+		// Private is redundant with logical type property.
+		private = nil
+
+	case *ProjectionsExpr, *AggregationsExpr:
+		// The private data of these ops was already used to print the output
+		// columns for their containing op (Project or GroupBy), so no need to
+		// print again.
+		private = nil
+
+	case *AnyExpr:
+		// We don't want to show the OriginalExpr; just show Cmp.
+		private = t.Cmp
+
+	case *SubqueryExpr, *ExistsExpr:
+		// We don't want to show the OriginalExpr.
+		private = nil
+
+	default:
+		private = scalar.Private()
+	}
+
+	if private != nil {
+		f.Buffer.WriteRune(':')
+		formatPrivate(f, private, &props.Physical{})
+	}
+}
+
+func (f *NodeFmtCtx) formatPresentation(
+	nd RelNode, tp treeprinter.Node, presentation props.Presentation,
+) {
+	relational := nd.Relational()
+	f.Buffer.Reset()
+	f.Buffer.WriteString("columns:")
+	for _, col := range presentation {
+		formatCol(f, col.Label, col.ID, relational.NotNullCols)
+	}
+	tp.Child(f.Buffer.String())
+}
+
+// formatColSet constructs a new treeprinter child containing the specified set
+// of columns formatting using the formatCol method.
+func (f *NodeFmtCtx) formatColSet(
+	nd RelNode, tp treeprinter.Node, heading string, colSet opt.ColSet,
+) {
+	if !colSet.Empty() {
+		notNullCols := nd.Relational().NotNullCols
+		f.Buffer.Reset()
+		f.Buffer.WriteString(heading)
+		colSet.ForEach(func(i int) {
+			formatCol(f, "", opt.ColumnID(i), notNullCols)
+		})
+		tp.Child(f.Buffer.String())
+	}
+}
+
+// formatColList constructs a new treeprinter child containing the specified
+// list of columns formatted using the formatCol method.
+func (f *NodeFmtCtx) formatColList(
+	nd RelNode, tp treeprinter.Node, heading string, colList opt.ColList,
+) {
+	if len(colList) > 0 {
+		notNullCols := nd.Relational().NotNullCols
+		f.Buffer.Reset()
+		f.Buffer.WriteString(heading)
+		for _, col := range colList {
+			formatCol(f, "", col, notNullCols)
+		}
+		tp.Child(f.Buffer.String())
+	}
+}
+
+// formatCol outputs the specified column into the context's buffer using the
+// following format:
+//   label:index(type)
+//
+// If the column is not nullable, then this is the format:
+//   label:index(type!null)
+//
+// If a label is given, then it is used. Otherwise, a "best effort" label is
+// used from query metadata.
+func formatCol(f *NodeFmtCtx, label string, id opt.ColumnID, notNullCols opt.ColSet) {
+	md := f.Memo.metadata
+	if label == "" {
+		fullyQualify := !f.HasFlags(NodeFmtHideQualifications)
+		label = md.QualifiedColumnLabel(id, fullyQualify)
+	}
+
+	if !isSimpleColumnName(label) {
+		// Add quotations around the column name if it is not composed of simple
+		// ASCII characters.
+		label = "\"" + label + "\""
+	}
+
+	typ := md.ColumnType(id)
+	f.Buffer.WriteByte(' ')
+	f.Buffer.WriteString(label)
+	f.Buffer.WriteByte(':')
+	fmt.Fprintf(f.Buffer, "%d", id)
+	f.Buffer.WriteByte('(')
+	f.Buffer.WriteString(typ.String())
+
+	if notNullCols.Contains(int(id)) {
+		f.Buffer.WriteString("!null")
+	}
+	f.Buffer.WriteByte(')')
+}
+
+func formatPrivate(f *NodeFmtCtx, private interface{}, physProps *props.Physical) {
+	if private == nil {
+		return
+	}
+	switch t := private.(type) {
+	case *opt.ColumnID:
+		fullyQualify := !f.HasFlags(NodeFmtHideQualifications)
+		label := f.Memo.metadata.QualifiedColumnLabel(*t, fullyQualify)
+		fmt.Fprintf(f.Buffer, " %s", label)
+
+	case *TupleOrdinal:
+		fmt.Fprintf(f.Buffer, " %d", *t)
+
+	case *ScanPrivate:
+		// Don't output name of index if it's the primary index.
+		tab := f.Memo.metadata.Table(t.Table)
+		if t.Index == opt.PrimaryIndex {
+			fmt.Fprintf(f.Buffer, " %s", tab.Name().TableName)
+		} else {
+			fmt.Fprintf(f.Buffer, " %s@%s", tab.Name().TableName, tab.Index(t.Index).IdxName())
+		}
+		if _, reverse := t.CanProvideOrdering(f.Memo.Metadata(), &physProps.Ordering); reverse {
+			f.Buffer.WriteString(",rev")
+		}
+
+	case *VirtualScanPrivate:
+		tab := f.Memo.metadata.Table(t.Table)
+		fmt.Fprintf(f.Buffer, " %s", tab.Name())
+
+	case *RowNumberPrivate:
+		if !t.Ordering.Any() {
+			fmt.Fprintf(f.Buffer, " ordering=%s", t.Ordering)
+		}
+
+	case *GroupingPrivate:
+		fmt.Fprintf(f.Buffer, " cols=%s", t.GroupingCols.String())
+		if !t.Ordering.Any() {
+			fmt.Fprintf(f.Buffer, ",ordering=%s", t.Ordering)
+		}
+
+	case *IndexJoinPrivate:
+		tab := f.Memo.metadata.Table(t.Table)
+		fmt.Fprintf(f.Buffer, " %s", tab.Name().TableName)
+
+	case *LookupJoinPrivate:
+		tab := f.Memo.metadata.Table(t.Table)
+		if t.Index == opt.PrimaryIndex {
+			fmt.Fprintf(f.Buffer, " %s", tab.Name().TableName)
+		} else {
+			fmt.Fprintf(f.Buffer, " %s@%s", tab.Name().TableName, tab.Index(t.Index).IdxName())
+		}
+
+	case *MergeJoinPrivate:
+		fmt.Fprintf(f.Buffer, " %s,%s,%s", t.JoinType, t.LeftEq, t.RightEq)
+
+	case *FunctionPrivate:
+		fmt.Fprintf(f.Buffer, " %s", t.Name)
+
+	case *props.OrderingChoice:
+		if !t.Any() {
+			fmt.Fprintf(f.Buffer, " ordering=%s", t)
+		}
+
+	case *ExplainPrivate, *opt.ColSet, *opt.ColList, *SetPrivate, types.T:
+		// Don't show anything, because it's mostly redundant.
+
+	default:
+		fmt.Fprintf(f.Buffer, " %v", private)
+	}
+}
+
+// isSimpleColumnName returns true if the given label consists of only ASCII
+// letters, numbers, underscores, quotation marks, and periods ("."). It is
+// used to determine whether to enclose a column name in quotation marks for
+// nicer display.
+func isSimpleColumnName(label string) bool {
+	for i, r := range label {
+		if r > unicode.MaxASCII {
+			return false
+		}
+
+		if i == 0 {
+			if r != '"' && !unicode.IsLetter(r) {
+				// The first character must be a letter or quotation mark.
+				return false
+			}
+		} else if r != '.' && r != '_' && r != '"' && !unicode.IsNumber(r) && !unicode.IsLetter(r) {
+			return false
+		}
+	}
+	return true
+}

@@ -934,6 +934,15 @@ func (f *FuncDepSet) AddFrom(fdset *FuncDepSet) {
 	}
 }
 
+func (f *FuncDepSet) AddEquivFrom(fdset *FuncDepSet) {
+	for i := range fdset.deps {
+		fd := &fdset.deps[i]
+		if fd.equiv {
+			f.addDependency(fd.from, fd.to, fd.strict, fd.equiv)
+		}
+	}
+}
+
 // MakeProduct modifies the FD set to reflect the impact of a cartesian product
 // operation between this set and the given set. The result is a union of the
 // FDs from each set, as well as a union of their keys. The two FD sets are

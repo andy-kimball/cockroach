@@ -24,14 +24,16 @@ import (
 // equivalent expressions and adds them to the memo.
 type explorerGen struct {
 	compiled *lang.CompiledExpr
+	md       *metadata
 	w        *matchWriter
-	ruleGen  ruleGen
+	ruleGen  newRuleGen
 }
 
 func (g *explorerGen) generate(compiled *lang.CompiledExpr, w io.Writer) {
 	g.compiled = compiled
+	g.md = newMetadata(compiled, "xform")
 	g.w = &matchWriter{writer: w}
-	g.ruleGen.init(compiled, g.w)
+	g.ruleGen.init(compiled, g.md, g.w)
 
 	g.w.writeIndent("package xform\n\n")
 
@@ -63,16 +65,21 @@ func (g *explorerGen) generate(compiled *lang.CompiledExpr, w io.Writer) {
 //   }
 //
 func (g *explorerGen) genDispatcher() {
-	g.w.nestIndent("func (_e *explorer) exploreExpr(_state *exploreState, _eid memo.ExprID) (_fullyExplored bool) {\n")
-	g.w.writeIndent("_expr := _e.mem.Expr(_eid)\n")
-	g.w.writeIndent("switch _expr.Operator() {\n")
+	g.w.nestIndent("func (_e *explorer) exploreGroupMember(\n")
+	g.w.writeIndent("state *exploreState,\n")
+	g.w.writeIndent("member memo.RelNode,\n")
+	g.w.writeIndent("ordinal int,\n")
+	g.w.unnest(") (fullyExplored bool)")
+	g.w.nest(" {\n")
+	g.w.writeIndent("switch t := member.(type) {\n")
 
 	for _, define := range g.compiled.Defines {
 		// Only include exploration rules.
 		rules := g.compiled.LookupMatchingRules(string(define.Name)).WithTag("Explore")
 		if len(rules) > 0 {
-			format := "case opt.%sOp: return _e.explore%s(_state, _eid)\n"
-			g.w.writeIndent(format, define.Name, define.Name)
+			opTyp := g.md.typeOf(define)
+			format := "case *%s: return _e.explore%s(state, t, ordinal)\n"
+			g.w.writeIndent(format, opTyp.name, define.Name)
 		}
 	}
 
@@ -101,9 +108,10 @@ func (g *explorerGen) genRuleFuncs() {
 			continue
 		}
 
-		format := "func (_e *explorer) explore%s(_rootState *exploreState, _root memo.ExprID) (_fullyExplored bool) {\n"
-		g.w.nestIndent(format, define.Name)
-		g.w.writeIndent("_rootExpr := _e.mem.Expr(_root).As%s()\n", define.Name)
+		opTyp := g.md.typeOf(define)
+
+		format := "func (_e *explorer) explore%s(_rootState *exploreState, _root *%s, _rootOrd int) (_fullyExplored bool) {\n"
+		g.w.nestIndent(format, define.Name, opTyp.name)
 		g.w.writeIndent("_fullyExplored = true\n\n")
 
 		sortRulesByPriority(rules)

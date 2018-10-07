@@ -96,8 +96,8 @@ func (g *optgen) run(args ...string) bool {
 	switch cmd {
 	case "compile":
 	case "explorer":
-	case "exprs":
 	case "factory":
+	case "nodes":
 	case "ops":
 	case "rulenames":
 
@@ -165,12 +165,12 @@ func (g *optgen) run(args ...string) bool {
 		var gen explorerGen
 		err = g.generate(compiled, gen.generate)
 
-	case "exprs":
-		var gen exprsGen
-		err = g.generate(compiled, gen.generate)
-
 	case "factory":
 		var gen factoryGen
+		err = g.generate(compiled, gen.generate)
+
+	case "nodes":
+		var gen nodesGen
 		err = g.generate(compiled, gen.generate)
 
 	case "ops":
@@ -196,6 +196,8 @@ func (g *optgen) run(args ...string) bool {
 func (g *optgen) validate(compiled *lang.CompiledExpr) []error {
 	var errors []error
 
+	md := newMetadata(compiled, "")
+
 	for _, rule := range compiled.Rules {
 		if !rule.Tags.Contains("Normalize") && !rule.Tags.Contains("Explore") {
 			format := "%s rule is missing \"Normalize\" or \"Explore\" tag"
@@ -205,16 +207,16 @@ func (g *optgen) validate(compiled *lang.CompiledExpr) []error {
 		}
 	}
 
-	for _, define := range compiled.Defines {
+	for _, define := range compiled.Defines.WithoutTag("Private") {
 		// Ensure that fields are defined in the following order:
-		//   Expr*
-		//   ExprList?
+		//
+		//   Node*
 		//   Private?
 		//
-		// That is, there can be zero or more expression-typed fields, followed
-		// by zero or one list-typed field, followed by zero or one private field.
+		// That is, there can be zero or more node-typed fields, followed by zero
+		// or one private field.
 		for i, field := range define.Fields {
-			if isPrivateType(string(field.Type)) {
+			if !md.typeOf(field).isNode {
 				if i != len(define.Fields)-1 {
 					format := "private field '%s' is not the last field in '%s'"
 					err := fmt.Errorf(format, field.Name, define.Name)
@@ -223,23 +225,29 @@ func (g *optgen) validate(compiled *lang.CompiledExpr) []error {
 					break
 				}
 			}
+		}
+	}
 
-			if isListType(string(field.Type)) {
-				index := len(define.Fields) - 1
-				if privateField(define) != nil {
-					index--
-				}
-
-				if i != index {
-					format := "list field '%s' is not the last non-private field in '%s'"
-					err := fmt.Errorf(format, field.Name, define.Name)
-					err = addErrorSource(err, field.Source())
-					errors = append(errors, err)
+	var visitRules func(e lang.Expr) lang.Expr
+	visitRules = func(e lang.Expr) lang.Expr {
+		switch t := e.(type) {
+		case *lang.ListExpr:
+			// Ensure that data type references a List operator.
+			if extType, ok := t.Typ.(*lang.ExternalDataType); ok {
+				if typ := md.lookupType(extType.Name); typ.listItemType != nil {
 					break
 				}
 			}
+
+			err := fmt.Errorf("list operator type could not be determined")
+			err = addErrorSource(err, t.Source())
+			errors = append(errors, err)
 		}
+
+		return e.Visit(visitRules)
 	}
+
+	visitRules(&compiled.Rules)
 
 	return errors
 }
@@ -308,8 +316,8 @@ func (g *optgen) usage() {
 	fmt.Fprintf(g.stdErr, "The commands are:\n\n")
 	fmt.Fprintf(g.stdErr, "\tcompile    generate the optgen compiled format\n")
 	fmt.Fprintf(g.stdErr, "\texplorer   generate expression tree exploration rules\n")
-	fmt.Fprintf(g.stdErr, "\texprs      generate expression definitions and functions\n")
 	fmt.Fprintf(g.stdErr, "\tfactory    generate expression tree creation and normalization functions\n")
+	fmt.Fprintf(g.stdErr, "\tnodes      generate node definitions and functions\n")
 	fmt.Fprintf(g.stdErr, "\tops        generate operator definitions and functions\n")
 	fmt.Fprintf(g.stdErr, "\trulenames  generate enumeration of rule names\n")
 	fmt.Fprintf(g.stdErr, "\n")

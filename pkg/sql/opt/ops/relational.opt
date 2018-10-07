@@ -31,7 +31,37 @@
 # in which case the direction is fixed).
 [Relational]
 define Scan {
-    Def ScanOpDef
+    _ ScanPrivate
+}
+
+[Private]
+define ScanPrivate {
+	# Table identifies the table to scan. It is an id that can be passed to
+	# the Metadata.Table method in order to fetch opt.Table metadata.
+	Table TableID
+
+	# Index identifies the index to scan (whether primary or secondary). It
+	# can be passed to the opt.Table.Index(i int) method in order to fetch the
+	# opt.Index metadata.
+	Index int
+
+	# Cols specifies the set of columns that the scan operator projects. This
+	# may be a subset of the columns that the table/index contains.
+	Cols ColSet
+
+	# If set, the scan is a constrained scan; the constraint contains the spans
+	# that need to be scanned.
+	Constraint Constraint
+
+	# HardLimit specifies the maximum number of rows that the scan can return
+	# (after applying any constraint), as well as the required scan direction.
+	# This is a "hard" limit, meaning that the scan operator must never return
+	# more than this number of rows, even if more are available. If its value is
+	# zero, then the limit is unknown, and the scan should return all available
+	# rows.
+	HardLimit ScanLimit
+
+	Flags ScanFlags
 }
 
 # VirtualScan returns a result set containing every row in a virtual table.
@@ -47,7 +77,20 @@ define Scan {
 # makes sense to have a separate operator.
 [Relational]
 define VirtualScan {
-    Def VirtualScanOpDef
+    _ VirtualScanPrivate
+}
+
+[Private]
+define VirtualScanPrivate {
+	# Table identifies the virtual table to synthesize and scan. It is an id
+	# that can be passed to the Metadata.Table method in order to fetch
+	# opt.Table metadata.
+	Table TableID
+
+	# Cols specifies the set of columns that the VirtualScan operator projects.
+	# This is always every column in the virtual table (i.e. never a subset even
+	# if all columns are not needed).
+	Cols ColSet
 }
 
 # Values returns a manufactured result set containing a constant number of rows.
@@ -61,7 +104,7 @@ define VirtualScan {
 # as an opt.ColList. It is legal for Cols to be empty.
 [Relational]
 define Values {
-    Rows ExprList
+    Rows ScalarListExpr
     Cols ColList
 }
 
@@ -72,8 +115,8 @@ define Values {
 # matching easier.
 [Relational]
 define Select {
-    Input  Expr
-    Filter Expr
+    Input   RelNode
+    Filters FiltersExpr
 }
 
 # Project modifies the set of columns returned by the input result set. Columns
@@ -84,8 +127,10 @@ define Select {
 # synthesized output columns.
 [Relational]
 define Project {
-    Input       Expr
-    Projections Expr
+    Input       RelNode
+    Projections ProjectionsExpr
+
+    Passthrough ColSet
 }
 
 # InnerJoin creates a result set that combines columns from its left and right
@@ -95,44 +140,44 @@ define Project {
 # allowed to refer to the other's projected columns.
 [Relational, Join, JoinNonApply]
 define InnerJoin {
-    Left  Expr
-    Right Expr
-    On    Expr
+    Left  RelNode
+    Right RelNode
+    On    FiltersExpr
 }
 
 [Relational, Join, JoinNonApply]
 define LeftJoin {
-    Left  Expr
-    Right Expr
-    On    Expr
+    Left  RelNode
+    Right RelNode
+    On    FiltersExpr
 }
 
 [Relational, Join, JoinNonApply]
 define RightJoin {
-    Left  Expr
-    Right Expr
-    On    Expr
+    Left  RelNode
+    Right RelNode
+    On    FiltersExpr
 }
 
 [Relational, Join, JoinNonApply]
 define FullJoin {
-    Left  Expr
-    Right Expr
-    On    Expr
+    Left  RelNode
+    Right RelNode
+    On    FiltersExpr
 }
 
 [Relational, Join, JoinNonApply]
 define SemiJoin {
-    Left  Expr
-    Right Expr
-    On    Expr
+    Left  RelNode
+    Right RelNode
+    On    FiltersExpr
 }
 
 [Relational, Join, JoinNonApply]
 define AntiJoin {
-    Left  Expr
-    Right Expr
-    On    Expr
+    Left  RelNode
+    Right RelNode
+    On    FiltersExpr
 }
 
 # IndexJoin represents an inner join between an input expression and a primary
@@ -144,17 +189,58 @@ define AntiJoin {
 # are created from Join operators).
 [Relational]
 define IndexJoin {
-    Input Expr
-    Def   IndexJoinDef
+    Input RelNode
+
+    _ IndexJoinPrivate
+}
+
+[Private]
+define IndexJoinPrivate {
+	# Table identifies the table to do lookups in. The primary index is
+	# currently the only index used.
+	Table TableID
+
+	# Cols specifies the set of columns that the index join operator projects.
+	# This may be a subset of the columns that the table contains.
+	Cols ColSet
 }
 
 # LookupJoin represents a join between an input expression and an index.
 # The type of join is in the Def private.
 [Relational]
 define LookupJoin {
-    Input Expr
-    On    Expr
-    Def   LookupJoinDef
+    Input RelNode
+    On    FiltersExpr
+
+    _ LookupJoinPrivate
+}
+
+[Private]
+define LookupJoinPrivate {
+	# JoinType is InnerJoin or LeftJoin.
+	# TODO(radu): support SemiJoin, AntiJoin.
+	JoinType Operator
+
+	# Table identifies the table do to lookups in.
+	Table TableID
+
+	# Index identifies the index to do lookups in (whether primary or secondary).
+	# It can be passed to the opt.Table.Index(i int) method in order to fetch the
+	# opt.Index metadata.
+	Index int
+
+	# KeyCols are the columns (produced by the input) used to create lookup keys.
+	# The key columns must be non-empty, and are listed in the same order as the
+	# index columns (or a prefix of them).
+	KeyCols ColList
+
+	# LookupCols is the set of columns retrieved from the index. The LookupJoin
+	# operator produces the columns in its input plus these columns. This set may
+	# or may not contain the columns from the index we are using for the lookups
+	# (which correspond to KeyCols).
+	LookupCols ColSet
+
+	lookupProps RelProps
 }
 
 # MergeJoin represents a join that is executed using merge-join.
@@ -163,9 +249,36 @@ define LookupJoin {
 # It can be any type of join (identified in the private of MergeOn).
 [Relational]
 define MergeJoin {
-    Left    Expr
-    Right   Expr
-    MergeOn Expr
+    Left  RelNode
+    Right RelNode
+    On    FiltersExpr
+
+    _ MergeJoinPrivate
+}
+
+[Private]
+define MergeJoinPrivate {
+	# JoinType is one of the basic join operators: InnerJoin, LeftJoin,
+	# RightJoin, FullJoin, SemiJoin, AntiJoin.
+	JoinType Operator
+
+	# LeftEq and RightEq are orderings on equality columns. They have the same
+	# length and LeftEq[i] is a column on the left side which is constrained to
+	# be equal to RightEq[i] on the right side. The directions also have to
+	# match.
+	#
+	# Examples of valid settings for abc JOIN def ON a=d,b=e:
+	#   LeftEq: a+,b+   RightEq: d+,e+
+	#   LeftEq: b-,a+   RightEq: e-,d+
+	LeftEq  Ordering
+	RightEq Ordering
+
+	# LeftOrdering and RightOrdering are "simplified" versions of LeftEq/RightEq,
+	# taking into account the functional dependencies of each side. We need both
+	# versions because we need to configure execution with specific equality
+	# columns and orderings.
+	LeftOrdering  OrderingChoice
+	RightOrdering OrderingChoice
 }
 
 # InnerJoinApply has the same join semantics as InnerJoin. However, unlike
@@ -173,44 +286,44 @@ define MergeJoin {
 # left input.
 [Relational, Join, JoinApply]
 define InnerJoinApply {
-    Left  Expr
-    Right Expr
-    On    Expr
+    Left  RelNode
+    Right RelNode
+    On    FiltersExpr
 }
 
 [Relational, Join, JoinApply]
 define LeftJoinApply {
-    Left  Expr
-    Right Expr
-    On    Expr
+    Left  RelNode
+    Right RelNode
+    On    FiltersExpr
 }
 
 [Relational, Join, JoinApply]
 define RightJoinApply {
-    Left  Expr
-    Right Expr
-    On    Expr
+    Left  RelNode
+    Right RelNode
+    On    FiltersExpr
 }
 
 [Relational, Join, JoinApply]
 define FullJoinApply {
-    Left  Expr
-    Right Expr
-    On    Expr
+    Left  RelNode
+    Right RelNode
+    On    FiltersExpr
 }
 
 [Relational, Join, JoinApply]
 define SemiJoinApply {
-    Left  Expr
-    Right Expr
-    On    Expr
+    Left  RelNode
+    Right RelNode
+    On    FiltersExpr
 }
 
 [Relational, Join, JoinApply]
 define AntiJoinApply {
-    Left  Expr
-    Right Expr
-    On    Expr
+    Left  RelNode
+    Right RelNode
+    On    FiltersExpr
 }
 
 # GroupBy computes aggregate functions over groups of input rows. Input rows
@@ -231,11 +344,27 @@ define AntiJoinApply {
 # aggregation (like ARRAY_AGG). Grouping columns are inconsequential in this
 # ordering; we currently set all grouping columns as optional in this ordering
 # (but note that this is not required by the operator).
-[Relational]
+[Relational, Grouping]
 define GroupBy {
-    Input        Expr
-    Aggregations Expr
-    Def          GroupByDef
+    Input        RelNode
+    Aggregations AggregationsExpr
+
+    _ GroupingPrivate
+}
+
+# GroupByDef defines the value of the Def private field of the GroupBy and
+# ScalarGroupBy operators. This struct is shared so that both operators can be
+# treated polymorphically.
+[Private]
+define GroupingPrivate {
+	# GroupingCols partitions the GroupBy input rows into aggregation groups.
+	# All rows sharing the same values for these columns are in the same group.
+	# GroupingCols is always empty in the ScalarGroupBy case.
+	GroupingCols ColSet
+
+	# Ordering specifies the sort order of values within each group. This is
+	# only significant for order-sensitive aggregation operators, like ArrayAgg.
+	Ordering OrderingChoice
 }
 
 # ScalarGroupBy computes aggregate functions over the complete set of input
@@ -249,11 +378,12 @@ define GroupBy {
 # ScalarGroupBy uses the same GroupByDef private so that it's polymorphic with
 # GroupBy and can be used in the same rules (when appropriate). In the
 # ScalarGroupBy case, the grouping column field in GroupByDef is always empty.
-[Relational]
+[Relational, Grouping]
 define ScalarGroupBy {
-    Input        Expr
-    Aggregations Expr
-    Def          GroupByDef
+    Input        RelNode
+    Aggregations AggregationsExpr
+
+    _ GroupingPrivate
 }
 
 # DistinctOn filters out rows that are identical on the set of grouping columns;
@@ -289,11 +419,12 @@ define ScalarGroupBy {
 # DistinctOn uses an Aggregations child and the GroupByDef private so that it's
 # polymorphic with GroupBy and can be used in the same rules (when appropriate).
 # In the DistinctOn case, the aggregations can be only FirstAgg or ConstAgg.
-[Relational]
+[Relational, Grouping]
 define DistinctOn {
-    Input        Expr
-    Aggregations Expr
-    Def          GroupByDef
+    Input        RelNode
+    Aggregations AggregationsExpr
+
+    _ GroupingPrivate
 }
 
 # Union is an operator used to combine the Left and Right input relations into
@@ -301,11 +432,39 @@ define DistinctOn {
 # The private field, ColMap, matches columns from the Left and Right inputs
 # of the Union with the output columns. See the comment above opt.SetOpColMap
 # for more details.
-[Relational]
+[Relational, Set]
 define Union {
-    Left   Expr
-    Right  Expr
-    ColMap SetOpColMap
+    Left    RelNode
+    Right   RelNode
+
+    _ SetPrivate
+}
+
+# SetOpColMap defines the value of the ColMap private field of the set
+# operators: Union, Intersect, Except, UnionAll, IntersectAll and ExceptAll.
+# It matches columns from the left and right inputs of the operator
+# with the output columns, since OutputCols are not ordered and may
+# not correspond to each other.
+#
+# For example, consider the following query:
+#   SELECT y, x FROM xy UNION SELECT b, a FROM ab
+#
+# Given:
+#   col  index
+#   x    1
+#   y    2
+#   a    3
+#   b    4
+#
+# SetOpColMap will contain the following values:
+#   Left:  [2, 1]
+#   Right: [4, 3]
+#   Out:   [5, 6]  <-- synthesized output columns
+[Private]
+define SetPrivate {
+	LeftCols  ColList
+	RightCols ColList
+	OutCols   ColList
 }
 
 # Intersect is an operator used to perform an intersection between the Left
@@ -315,11 +474,12 @@ define Union {
 # The private field, ColMap, matches columns from the Left and Right inputs
 # of the Intersect with the output columns. See the comment above
 # opt.SetOpColMap for more details.
-[Relational]
+[Relational, Set]
 define Intersect {
-    Left   Expr
-    Right  Expr
-    ColMap SetOpColMap
+    Left    RelNode
+    Right   RelNode
+
+    _ SetPrivate
 }
 
 # Except is an operator used to perform a set difference between the Left and
@@ -328,11 +488,12 @@ define Intersect {
 # The private field, ColMap, matches columns from the Left and Right inputs
 # of the Except with the output columns. See the comment above opt.SetOpColMap
 # for more details.
-[Relational]
+[Relational, Set]
 define Except {
-    Left   Expr
-    Right  Expr
-    ColMap SetOpColMap
+    Left    RelNode
+    Right   RelNode
+
+    _ SetPrivate
 }
 
 # UnionAll is an operator used to combine the Left and Right input relations
@@ -351,11 +512,12 @@ define Except {
 # The private field, ColMap, matches columns from the Left and Right inputs
 # of the UnionAll with the output columns. See the comment above
 # opt.SetOpColMap for more details.
-[Relational]
+[Relational, Set]
 define UnionAll {
-    Left   Expr
-    Right  Expr
-    ColMap SetOpColMap
+    Left    RelNode
+    Right   RelNode
+
+    _ SetPrivate
 }
 
 # IntersectAll is an operator used to perform an intersection between the Left
@@ -376,11 +538,12 @@ define UnionAll {
 # The private field, ColMap, matches columns from the Left and Right inputs
 # of the IntersectAll with the output columns. See the comment above
 # opt.SetOpColMap for more details.
-[Relational]
+[Relational, Set]
 define IntersectAll {
-    Left   Expr
-    Right  Expr
-    ColMap SetOpColMap
+    Left    RelNode
+    Right   RelNode
+
+    _ SetPrivate
 }
 
 # ExceptAll is an operator used to perform a set difference between the Left
@@ -401,11 +564,12 @@ define IntersectAll {
 # The private field, ColMap, matches columns from the Left and Right inputs
 # of the ExceptAll with the output columns. See the comment above
 # opt.SetOpColMap for more details.
-[Relational]
+[Relational, Set]
 define ExceptAll {
-    Left   Expr
-    Right  Expr
-    ColMap SetOpColMap
+    Left    RelNode
+    Right   RelNode
+
+    _ SetPrivate
 }
 
 # Limit returns a limited subset of the results in the input relation.
@@ -415,8 +579,9 @@ define ExceptAll {
 # are returned).
 [Relational]
 define Limit {
-    Input    Expr
-    Limit    Expr
+    Input RelNode
+    Limit ScalarExpr
+
     Ordering OrderingChoice
 }
 
@@ -424,8 +589,9 @@ define Limit {
 # conjunction with Limit.
 [Relational]
 define Offset {
-    Input    Expr
-    Offset   Expr
+    Input  RelNode
+    Offset ScalarExpr
+
     Ordering OrderingChoice
 }
 
@@ -434,29 +600,64 @@ define Offset {
 # details.
 [Relational]
 define Max1Row {
-    Input Expr
+    Input RelNode
 }
 
 # Explain returns information about the execution plan of the "input"
 # expression.
 [Relational]
 define Explain {
-    Input Expr
-    Def   ExplainOpDef
+    Input RelNode
+
+    _ ExplainPrivate
+}
+
+[Private]
+define ExplainPrivate {
+    # Options contains settings that control the output of the explain statement.
+	Options ExplainOptions
+
+	# ColList stores the column IDs for the explain columns.
+	ColList ColList
+
+	# Props stores the required physical properties for the enclosed expression.
+	Props PhysProps
 }
 
 # ShowTraceForSession returns the current session traces.
 [Relational]
 define ShowTraceForSession {
-    Def   ShowTraceOpDef
+    _ ShowTracePrivate
+}
+
+[Private]
+define ShowTracePrivate {
+	TraceType ShowTraceType
+
+	# Compact indicates that we output a smaller set of columns; set
+	# when SHOW COMPACT [KV] TRACE is used.
+	Compact bool
+
+	# ColList stores the column IDs for the SHOW TRACE columns.
+	ColList ColList
 }
 
 # RowNumber adds a column to each row in its input containing a unique,
 # increasing number.
 [Relational]
 define RowNumber {
-    Input    Expr
-    Def      RowNumberDef
+    Input RelNode
+
+    _ RowNumberPrivate
+}
+
+[Private]
+define RowNumberPrivate {
+	# Ordering denotes the required ordering of the input.
+	Ordering OrderingChoice
+
+	# ColID holds the id of the column introduced by this operator.
+	ColID ColumnID
 }
 
 # Zip represents a functional zip over generators a,b,c, which returns tuples of
@@ -481,6 +682,6 @@ define RowNumber {
 # (e.g., pg_get_keywords() outputs three columns).
 [Relational]
 define Zip {
-    Funcs ExprList
+    Funcs ScalarListExpr
     Cols  ColList
 }

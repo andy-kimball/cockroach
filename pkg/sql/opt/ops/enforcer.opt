@@ -16,5 +16,4 @@
 # PhysicalProps struct.
 [Enforcer]
 define Sort {
-    Input Expr
 }

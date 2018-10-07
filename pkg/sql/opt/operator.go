@@ -18,6 +18,7 @@ import (
 	"fmt"
 
 	"github.com/cockroachdb/cockroach/pkg/sql/sem/tree"
+	"github.com/cockroachdb/cockroach/pkg/sql/sem/types"
 )
 
 // Operator describes the type of operation that a memo expression performs.
@@ -38,6 +39,23 @@ func (i Operator) String() string {
 	}
 
 	return opNames[opIndexes[i]:opIndexes[i+1]]
+}
+
+type Node interface {
+	Op() Operator
+	ChildCount() int
+	Child(nth int) Node
+	Private() interface{}
+	String() string
+}
+
+type MutableNode interface {
+	SetChild(nth int, child Node)
+}
+
+type ScalarExpr interface {
+	Node
+	DataType() types.T
 }
 
 // ComparisonOpMap maps from a semantic tree comparison operator type to an

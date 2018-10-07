@@ -4,7 +4,7 @@
 optgen compile test.opt
 # Not comment.
 define Not {
-    Input Expr
+    Input Node
 }
 
 [EliminateNot, Normalize]
@@ -17,7 +17,11 @@ define Not {
 			Tags=(Tags)
 			Name="Not"
 			Fields=(DefineFields
+<<<<<<< HEAD
 				(DefineField Name="Input" Type="Expr" Src=<test.opt:3:5>)
+=======
+				(DefineField Name="Input" Type="Node" Src=<test.opt:3:5>)
+>>>>>>> 1818c5d544... more
 			)
 			Src=<test.opt:2:1>
 		)
@@ -33,7 +37,11 @@ define Not {
 					(Func
 						Name=Not
 						Args=(Slice
+<<<<<<< HEAD
 							(Bind Label="input" Target=(Any Typ=Expr) Typ=Expr Src=<test.opt:7:11>)
+=======
+							(Bind Label="input" Target=(Any Typ=Node) Typ=Node Src=<test.opt:7:11>)
+>>>>>>> 1818c5d544... more
 						)
 						Typ=Not
 						Src=<test.opt:7:6>
@@ -42,7 +50,12 @@ define Not {
 				Typ=Not
 				Src=<test.opt:7:1>
 			)
+<<<<<<< HEAD
 			Replace=(Ref Label="input" Typ=Expr Src=<test.opt:7:25>)
+=======
+			Replace=(Ref Label="input" Typ=Node Src=<test.opt:7:25>)
+>>>>>>> 1818c5
+d544... more
 			Src=<test.opt:6:1>
 		)
 	)
@@ -53,8 +66,8 @@ define Not {
 #
 optgen compile all
 define Gt {
-    left Expr
-    right Expr
+    left  Node
+    right Node
 }
 ----
 (Compiled
@@ -64,8 +77,13 @@ define Gt {
 			Tags=(Tags)
 			Name="Gt"
 			Fields=(DefineFields
+<<<<<<< HEAD
 				(DefineField Name="left" Type="Expr" Src=<test.opt:2:5>)
 				(DefineField Name="right" Type="Expr" Src=<test.opt:3:5>)
+=======
+				(DefineField Name="left" Type="Node" Src=<test.opt:2:5>)
+				(DefineField Name="right" Type="Node" Src=<test.opt:3:5>)
+>>>>>>> 1818c5d544... more
 			)
 			Src=<test.opt:1:1>
 		)

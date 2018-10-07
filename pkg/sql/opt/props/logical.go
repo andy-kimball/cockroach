@@ -64,23 +64,11 @@ const (
 	HasHoistableSubquery
 )
 
-// Relational properties are the subset of logical properties that are computed
-// for relational expressions that return rows and columns rather than scalar
-// values.
-type Relational struct {
-	// OutputCols is the set of columns that can be projected by the
-	// expression. Ordering, naming, and duplication of columns is not
-	// representable by this property; those are physical properties.
-	OutputCols opt.ColSet
-
-	// NotNullCols is the subset of output columns which cannot be NULL.
-	// The NULL-ability of columns flows from the inputs and can also be
-	// derived from filters that are NULL-intolerant.
-	NotNullCols opt.ColSet
-
+// TODO(andyk): Rename to Logical once merge is complete.
+type Shared struct {
 	// OuterCols is the set of columns that are referenced by variables within
-	// this relational sub-expression, but are not bound within the scope of
-	// the expression. For example:
+	// this sub-expression, but are not bound within the scope of the expression.
+	// For example:
 	//
 	//   SELECT *
 	//   FROM a
@@ -91,7 +79,27 @@ type Relational struct {
 	// SELECT expression binds the b.x and b.y references, so they are not
 	// part of the outer column set. The outer SELECT binds the a.x column, and
 	// so its outer column set is empty.
+	//
+	// For the EXISTS expression, only a.x is an outer column. Note that what
+	// constitutes an "outer column" is dependent on an expression's location in
+	// the query. For example, while the b.x and b.y columns are not outer columns
+	// on the EXISTS expression, they *are* outer columns on the inner WHERE
+	// condition.
 	OuterCols opt.ColSet
+
+	// HasSubquery is true if the subtree rooted at this node contains a subquery.
+	// The subquery can be a Subquery, Exists, or Any expression. Subqueries are
+	// the only place where a relational node can be nested within a scalar
+	// expression.
+	HasSubquery bool
+
+	// HasCorrelatedSubquery is true if the scalar expression tree contains a
+	// subquery having one or more outer columns. The subquery can be a Subquery,
+	// Exists, or Any operator. These operators need to be hoisted out of scalar
+	// expression trees and turned into top-level apply joins. This property makes
+	// detection fast and easy so that the hoister doesn't waste time searching
+	// subtrees that don't contain subqueries.
+	HasCorrelatedSubquery bool
 
 	// CanHaveSideEffects is true if the subtree rooted at this expression might
 	// trigger a run-time error, might modify outside state, or might not always
@@ -102,6 +110,29 @@ type Relational struct {
 	// HasPlaceholder is true if the subtree rooted at this expression contains
 	// at least one Placeholder operator.
 	HasPlaceholder bool
+}
+
+// Relational properties are the subset of logical properties that are computed
+// for relational expressions that return rows and columns rather than scalar
+// values.
+type Relational struct {
+	Shared
+
+	// OutputCols is the set of columns that can be projected by the
+	// expression. Ordering, naming, and duplication of columns is not
+	// representable by this property; those are physical properties.
+	OutputCols opt.ColSet
+
+	// NotNullCols is the subset of output columns which cannot be NULL.
+	// The NULL-ability of columns flows from the inputs and can also be
+	// derived from filters that are NULL-intolerant.
+	NotNullCols opt.ColSet
+
+	// Cardinality is the number of rows that can be returned from this relational
+	// expression. The number of rows will always be between the inclusive Min and
+	// Max bounds. If Max=math.MaxUint32, then there is no limit to the number of
+	// rows returned by the expression.
+	Cardinality Cardinality
 
 	// FuncDepSet is a set of functional dependencies (FDs) that encode useful
 	// relationships between columns in a base or derived relation. Given two sets
@@ -127,12 +158,6 @@ type Relational struct {
 	//
 	// For more details, see the header comment for FuncDepSet.
 	FuncDeps FuncDepSet
-
-	// Cardinality is the number of rows that can be returned from this relational
-	// expression. The number of rows will always be between the inclusive Min and
-	// Max bounds. If Max=math.MaxUint32, then there is no limit to the number of
-	// rows returned by the expression.
-	Cardinality Cardinality
 
 	// Stats is the set of statistics that apply to this relational expression.
 	// See statistics.go and memo/statistics_builder.go for more details.
@@ -241,42 +266,14 @@ type Relational struct {
 // Scalar properties are the subset of logical properties that are computed for
 // scalar expressions that return primitive-valued types.
 type Scalar struct {
+	Shared
+
+	Populated bool
+
 	// Type is the data type of the scalar expression (int, string, etc).
+
+	// TODO(andyk): get rid of this
 	Type types.T
-
-	// OuterCols is the set of columns that are referenced by variables within
-	// this scalar sub-expression, but are not bound within the scope of the
-	// expression. For example:
-	//
-	//   SELECT *
-	//   FROM a
-	//   WHERE EXISTS(SELECT * FROM b WHERE b.x = a.x AND b.y = 5)
-	//
-	// For the EXISTS expression, only a.x is an outer column, meaning that
-	// only it is defined "outside" the EXISTS expression (hence the name
-	// "outer"). Note that what constitutes an "outer column" is dependent on
-	// an expression's location in the query. For example, while the b.x and
-	// b.y columns are not outer columns on the EXISTS expression, they *are*
-	// outer columns on the inner WHERE condition.
-	OuterCols opt.ColSet
-
-	// CanHaveSideEffects is true if the subtree rooted at this expression might
-	// trigger a run-time error, might modify outside state, or might not always
-	// return the same output given the same input. For more details, see the
-	// comment for Logical.CanHaveSideEffects.
-	CanHaveSideEffects bool
-
-	// HasPlaceholder is true if the subtree rooted at this expression contains
-	// at least one Placeholder operator.
-	HasPlaceholder bool
-
-	// HasCorrelatedSubquery is true if the scalar expression tree contains a
-	// subquery having one or more outer columns. The subquery can be a Subquery,
-	// Exists, or Any operator. These operators need to be hoisted out of scalar
-	// expression trees and turned into top-level apply joins. This property makes
-	// detection fast and easy so that the hoister doesn't waste time searching
-	// subtrees that don't contain subqueries.
-	HasCorrelatedSubquery bool
 
 	// Constraints is the set of constraints deduced from a boolean expression.
 	// For the expression to be true, all constraints in the set must be
@@ -292,7 +289,7 @@ type Scalar struct {
 
 	// FuncDeps is a set of functional dependencies (FDs) inferred from a
 	// boolean expression. This field is only populated for Filters expressions.
-	// FDs that can be inferred from Filters expressions include:
+	//
 	//  - Constant column FDs such as ()-->(1,2) from conjuncts such as
 	//    x = 5 AND y = 10.
 	//  - Equivalent column FDs such as (1)==(2), (2)==(1) from conjuncts such
@@ -452,6 +449,38 @@ func (p *Logical) HasPlaceholder() bool {
 		return p.Scalar.HasPlaceholder
 	}
 	return p.Relational.HasPlaceholder
+}
+
+// Verify runs consistency checks against the logical properties, in order to
+// ensure that they conform to several invariants:
+//
+//   1. Functional dependencies are internally consistent.
+//   2. Not null columns are a subset of output columns.
+//   3. Outer columns do not intersect output columns.
+//   4. If functional dependencies indicate that the relation can have at most
+//      one row, then the cardinality reflects that as well.
+//
+func (p *Relational) Verify() {
+	p.FuncDeps.Verify()
+
+	if !p.NotNullCols.SubsetOf(p.OutputCols) {
+		panic(fmt.Sprintf("not null cols %s not a subset of output cols %s",
+			p.NotNullCols, p.OutputCols))
+	}
+	if p.OuterCols.Intersects(p.OutputCols) {
+		panic(fmt.Sprintf("outer cols %s intersect output cols %s",
+			p.OuterCols, p.OutputCols))
+	}
+	if p.FuncDeps.HasMax1Row() {
+		if p.Cardinality.Max > 1 {
+			panic(fmt.Sprintf(
+				"max cardinality must be <= 1 if FDs have max 1 row: %s", p.Cardinality))
+		}
+	}
+}
+
+func (p *Scalar) Verify() {
+	p.FuncDeps.Verify()
 }
 
 // Verify runs consistency checks against the logical properties, in order to

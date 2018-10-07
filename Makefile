@@ -692,7 +692,7 @@ PROTOBUF_TARGETS := bin/.go_protobuf_sources bin/.gw_protobuf_sources bin/.cpp_p
 DOCGEN_TARGETS := bin/.docgen_bnfs bin/.docgen_functions
 
 OPTGEN_TARGETS = \
-	pkg/sql/opt/memo/expr.og.go \
+	pkg/sql/opt/memo/node.og.go \
 	pkg/sql/opt/operator.og.go \
 	pkg/sql/opt/xform/explorer.og.go \
 	pkg/sql/opt/norm/factory.og.go \
@@ -1292,23 +1292,23 @@ optgen-defs := pkg/sql/opt/ops/*.opt
 optgen-norm-rules := pkg/sql/opt/norm/rules/*.opt
 optgen-xform-rules := pkg/sql/opt/xform/rules/*.opt
 
-pkg/sql/opt/memo/expr.og.go: $(optgen-defs) bin/optgen
-	optgen -out $@ exprs $(optgen-defs)
+pkg/sql/opt/memo/node.og.go: $(optgen-defs) bin/optgen
+	optgen -out $@ nodes $(optgen-defs)
 
 pkg/sql/opt/operator.og.go: $(optgen-defs) bin/optgen
 	optgen -out $@ ops $(optgen-defs)
 
-pkg/sql/opt/rule_name.og.go: $(optgen-defs) $(optgen-norm-rules) $(optgen-xform-rules) bin/optgen
-	optgen -out $@ rulenames $(optgen-defs) $(optgen-norm-rules) $(optgen-xform-rules)
+#pkg/sql/opt/rule_name.og.go: $(optgen-defs) $(optgen-norm-rules) $(optgen-xform-rules) bin/optgen
+#	optgen -out $@ rulenames $(optgen-defs) $(optgen-norm-rules) $(optgen-xform-rules)
 
-pkg/sql/opt/rule_name_string.go: pkg/sql/opt/rule_name.go pkg/sql/opt/rule_name.og.go bin/.bootstrap
-	stringer -output=$@ -type=RuleName $(filter %.go,$^)
+#pkg/sql/opt/rule_name_string.go: pkg/sql/opt/rule_name.go pkg/sql/opt/rule_name.og.go bin/.bootstrap
+#	stringer -output=$@ -type=RuleName $(filter %.go,$^)
 
-pkg/sql/opt/xform/explorer.og.go: $(optgen-defs) $(optgen-xform-rules) bin/optgen
-	optgen -out $@ explorer $(optgen-defs) $(optgen-xform-rules)
+#pkg/sql/opt/xform/explorer.og.go: $(optgen-defs) $(optgen-xform-rules) bin/optgen
+#	optgen -out $@ explorer $(optgen-defs) $(optgen-xform-rules)
 
-pkg/sql/opt/norm/factory.og.go: $(optgen-defs) $(optgen-norm-rules) bin/optgen
-	optgen -out $@ factory $(optgen-defs) $(optgen-norm-rules)
+#pkg/sql/opt/norm/factory.og.go: $(optgen-defs) $(optgen-norm-rules) bin/optgen
+#	optgen -out $@ factory $(optgen-defs) $(optgen-norm-rules)
 
 # Format non-generated .cc and .h files in libroach using clang-format.
 .PHONY: c-deps-fmt
