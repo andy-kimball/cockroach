@@ -1374,7 +1374,7 @@ func ensureInputPropsForIndex(
 	sb *statisticsBuilder,
 ) {
 	if relProps.OutputCols.Empty() {
-		relProps.OutputCols = md.IndexColumns(tabID, indexOrd)
+		relProps.OutputCols = md.TableIndexColumns(tabID, indexOrd)
 		relProps.OutputCols.IntersectionWith(outputCols)
 		relProps.NotNullCols = tableNotNullCols(md, tabID)
 		relProps.NotNullCols.IntersectionWith(relProps.OutputCols)

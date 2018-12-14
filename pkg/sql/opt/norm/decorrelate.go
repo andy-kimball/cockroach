@@ -614,7 +614,7 @@ func (c *CustomFuncs) EnsureAggsCanIgnoreNulls(
 				// mapped back to the original id after the grouping (by the
 				// TranslateNonIgnoreAggs method).
 				md := c.f.Metadata()
-				label := md.ColumnLabel(newCol)
+				label := md.ColumnAlias(newCol)
 				newCol = md.AddColumn(label, md.ColumnType(newCol))
 			}
 		}

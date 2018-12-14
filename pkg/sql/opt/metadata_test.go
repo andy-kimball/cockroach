@@ -33,7 +33,7 @@ func TestMetadataColumns(t *testing.T) {
 		t.Fatalf("unexpected column id: %d", colID)
 	}
 
-	label := md.ColumnLabel(colID)
+	label := md.ColumnAlias(colID)
 	if label != "alias" {
 		t.Fatalf("unexpected column label: %s", label)
 	}
@@ -53,7 +53,7 @@ func TestMetadataColumns(t *testing.T) {
 		t.Fatalf("unexpected column id: %d", colID)
 	}
 
-	label = md.ColumnLabel(colID)
+	label = md.ColumnAlias(colID)
 	if label != "alias2" {
 		t.Fatalf("unexpected column label: %s", label)
 	}
@@ -88,27 +88,36 @@ func TestMetadataTables(t *testing.T) {
 		t.Fatal("table didn't match table added to metadata")
 	}
 
+	if md.TableAlias(tabID) != "a" {
+		t.Fatal("table alias doesn't match table name")
+	}
+
 	colID := tabID.ColumnID(0)
 	if colID == 0 {
 		t.Fatalf("unexpected column id: %d", colID)
 	}
 
-	label := md.ColumnLabel(colID)
+	label := md.ColumnAlias(colID)
 	if label != "x" {
 		t.Fatalf("unexpected column label: %s", label)
 	}
 
-	// Add another table reference to the metadata.
+	// Add another aliased table reference to the metadata.
 	b := &testcat.Table{StableID: 1}
 	b.TabName = tree.MakeUnqualifiedTableName(tree.Name("b"))
 	b.Columns = append(b.Columns, &testcat.Column{Name: "x"})
 
 	otherTabID := md.AddTable(b)
+	md.SetTableAlias(otherTabID, "b2")
 	if otherTabID == tabID {
 		t.Fatalf("unexpected table id: %d", tabID)
 	}
 
-	label = md.ColumnLabel(otherTabID.ColumnID(0))
+	if md.TableAlias(otherTabID) != "b2" {
+		t.Fatal("table alias doesn't match table name")
+	}
+
+	label = md.ColumnAlias(otherTabID.ColumnID(0))
 	if label != "x" {
 		t.Fatalf("unexpected column label: %s", label)
 	}
@@ -146,7 +155,7 @@ func TestIndexColumns(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		actual := md.IndexColumns(a, tc.index)
+		actual := md.TableIndexColumns(a, tc.index)
 		if !tc.expectedCols.Equals(actual) {
 			t.Errorf("expected %v, got %v", tc.expectedCols, actual)
 		}

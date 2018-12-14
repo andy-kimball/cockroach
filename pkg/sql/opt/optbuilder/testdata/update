@@ -227,10 +227,10 @@ update abcde
  ├── columns: <none>
  ├── fetch columns: a:7(int) b:8(int) c:9(int) d:10(int) e:11(int) rowid:12(int)
  ├── update-mapping:
- │    ├──  b:8 => a:1
- │    ├──  c:9 => b:2
- │    ├──  column13:13 => d:4
- │    └──  b:8 => e:5
+ │    ├──  b:8 => foo.a:1
+ │    ├──  c:9 => foo.b:2
+ │    ├──  column13:13 => foo.d:4
+ │    └──  b:8 => foo.e:5
  └── project
       ├── columns: column13:13(int) a:7(int!null) b:8(int) c:9(int) d:10(int) e:11(int) rowid:12(int!null)
       ├── scan abcde
@@ -483,9 +483,9 @@ project
  │    ├── columns: b:8(int) c:9(int) rowid:12(int!null) column13:13(int!null) column14:14(int)
  │    ├── fetch columns: a:7(int) b:8(int) c:9(int) d:10(int) e:11(int) rowid:12(int!null)
  │    ├── update-mapping:
- │    │    ├──  column13:13 => a:1
- │    │    ├──  column14:14 => d:4
- │    │    └──  column13:13 => e:5
+ │    │    ├──  column13:13 => foo.a:1
+ │    │    ├──  column14:14 => foo.d:4
+ │    │    └──  column13:13 => foo.e:5
  │    └── project
  │         ├── columns: column14:14(int) a:7(int!null) b:8(int) c:9(int) d:10(int) e:11(int) rowid:12(int!null) column13:13(int!null)
  │         ├── project
@@ -1021,9 +1021,9 @@ update abcde
  ├── columns: <none>
  ├── fetch columns: a:7(int) b:8(int) c:9(int) d:10(int) e:11(int) rowid:12(int)
  ├── update-mapping:
- │    ├──  column19:19 => b:2
- │    ├──  column20:20 => d:4
- │    └──  a:7 => e:5
+ │    ├──  column19:19 => abcde1.b:2
+ │    ├──  column20:20 => abcde1.d:4
+ │    └──  a:7 => abcde1.e:5
  └── project
       ├── columns: column20:20(int) a:7(int!null) b:8(int) c:9(int) d:10(int) e:11(int) rowid:12(int!null) column19:19(int)
       ├── project

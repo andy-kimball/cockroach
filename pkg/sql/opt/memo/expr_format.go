@@ -608,7 +608,7 @@ func formatCol(
 	md := f.Memo.metadata
 	if label == "" {
 		fullyQualify := !f.HasFlags(ExprFmtHideQualifications)
-		label = md.QualifiedColumnLabel(id, fullyQualify)
+		label = md.QualifiedColumnAlias(id, fullyQualify)
 	}
 
 	if !isSimpleColumnName(label) {
@@ -646,7 +646,7 @@ func FormatPrivate(f *ExprFmtCtx, private interface{}, physProps *physical.Requi
 	switch t := private.(type) {
 	case *opt.ColumnID:
 		fullyQualify := !f.HasFlags(ExprFmtHideQualifications)
-		label := f.Memo.metadata.QualifiedColumnLabel(*t, fullyQualify)
+		label := f.Memo.metadata.QualifiedColumnAlias(*t, fullyQualify)
 		fmt.Fprintf(f.Buffer, " %s", label)
 
 	case *TupleOrdinal:

@@ -425,7 +425,7 @@ func (c *CustomFuncs) JoinFiltersMatchAllLeftRows(
 			continue
 		}
 
-		fkTable := md.TableByStableID(fkRef.TableID)
+		fkTable := md.DataSourceByStableID(fkRef.TableID).(opt.Table)
 		fkPrefix := int(fkRef.PrefixLen)
 		if fkPrefix <= 0 {
 			panic("fkPrefix should always be positive")

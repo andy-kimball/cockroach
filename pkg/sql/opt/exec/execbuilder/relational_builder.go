@@ -240,7 +240,7 @@ func (b *Builder) constructValues(rows [][]tree.TypedExpr, cols opt.ColList) (ex
 	md := b.mem.Metadata()
 	resultCols := make(sqlbase.ResultColumns, len(cols))
 	for i, col := range cols {
-		resultCols[i].Name = md.ColumnLabel(col)
+		resultCols[i].Name = md.ColumnAlias(col)
 		resultCols[i].Typ = md.ColumnType(col)
 	}
 	node, err := b.factory.ConstructValues(rows, resultCols)
@@ -419,13 +419,13 @@ func (b *Builder) buildProject(prj *memo.ProjectExpr) (execPlan, error) {
 		}
 		res.outputCols.Set(int(item.Col), i)
 		exprs = append(exprs, expr)
-		colNames = append(colNames, md.ColumnLabel(item.Col))
+		colNames = append(colNames, md.ColumnAlias(item.Col))
 	}
 	prj.Passthrough.ForEach(func(i int) {
 		colID := opt.ColumnID(i)
 		res.outputCols.Set(i, len(exprs))
 		exprs = append(exprs, b.indexedVar(&ctx, md, colID))
-		colNames = append(colNames, md.ColumnLabel(colID))
+		colNames = append(colNames, md.ColumnAlias(colID))
 	})
 	reqOrdering := res.reqOrdering(prj)
 	res.root, err = b.factory.ConstructRender(input.root, exprs, colNames, reqOrdering)
@@ -821,7 +821,7 @@ func (b *Builder) buildRowNumber(rowNum *memo.RowNumberExpr) (execPlan, error) {
 		return execPlan{}, err
 	}
 
-	colName := b.mem.Metadata().ColumnLabel(rowNum.ColID)
+	colName := b.mem.Metadata().ColumnAlias(rowNum.ColID)
 
 	node, err := b.factory.ConstructOrdinality(input.root, colName)
 	if err != nil {
@@ -950,8 +950,8 @@ func (b *Builder) buildZigzagJoin(join *memo.ZigzagJoinExpr) (execPlan, error) {
 		leftEqCols[i] = exec.ColumnOrdinal(md.ColumnOrdinal(join.LeftEqCols[i]))
 		rightEqCols[i] = exec.ColumnOrdinal(md.ColumnOrdinal(join.RightEqCols[i]))
 	}
-	leftCols := md.IndexColumns(join.LeftTable, join.LeftIndex).Intersection(join.Cols)
-	rightCols := md.IndexColumns(join.RightTable, join.RightIndex).Intersection(join.Cols)
+	leftCols := md.TableIndexColumns(join.LeftTable, join.LeftIndex).Intersection(join.Cols)
+	rightCols := md.TableIndexColumns(join.RightTable, join.RightIndex).Intersection(join.Cols)
 	// Remove duplicate columns, if any.
 	rightCols.DifferenceWith(leftCols)
 
@@ -1052,7 +1052,7 @@ func (b *Builder) buildProjectSet(projectSet *memo.ProjectSetExpr) (execPlan, er
 
 		for _, col := range item.Cols {
 			zipCols = append(zipCols, sqlbase.ResultColumn{
-				Name: md.ColumnLabel(col),
+				Name: md.ColumnAlias(col),
 				Typ:  md.ColumnType(col),
 			})
 

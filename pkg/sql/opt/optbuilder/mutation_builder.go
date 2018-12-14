@@ -117,6 +117,7 @@ func (mb *mutationBuilder) init(b *Builder, op opt.Operator, tab opt.Table, alia
 
 	// Add the table and its columns (including mutation columns) to metadata.
 	mb.tabID = mb.md.AddTable(tab)
+	mb.md.SetTableAlias(mb.tabID, string(alias.TableName))
 }
 
 // addTargetNamedColsForInsert adds a list of user-specified column names to the
@@ -498,7 +499,7 @@ func (mb *mutationBuilder) buildInputForInsert(inScope *scope, inputRows *tree.S
 
 		// Assign name of input column. Computed columns can refer to this column
 		// by its name.
-		inCol.name = tree.Name(mb.md.ColumnLabel(mb.targetColList[i]))
+		inCol.name = tree.Name(mb.md.ColumnAlias(mb.targetColList[i]))
 
 		// Map the ordinal position of each table column to the id of the input
 		// column which will be inserted into that position.
@@ -528,7 +529,7 @@ func (mb *mutationBuilder) buildInputForUpdate(inScope *scope, upd *tree.Update)
 	// FROM
 	mb.outScope = mb.b.buildScan(
 		mb.tab,
-		mb.tab.Name(),
+		string(mb.alias.TableName),
 		nil, /* ordinals */
 		nil, /* indexFlags */
 		includeMutations,

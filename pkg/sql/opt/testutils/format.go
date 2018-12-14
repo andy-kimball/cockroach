@@ -67,7 +67,7 @@ func fmtInterceptor(f *memo.ExprFmtCtx, tp treeprinter.Node, nd opt.Expr) bool {
 	fmtCtx := tree.MakeFmtCtx(f.Buffer, tree.FmtSimple)
 	fmtCtx.WithIndexedVarFormat(func(ctx *tree.FmtCtx, idx int) {
 		fullyQualify := !f.HasFlags(memo.ExprFmtHideQualifications)
-		label := md.QualifiedColumnLabel(opt.ColumnID(idx+1), fullyQualify)
+		label := md.QualifiedColumnAlias(opt.ColumnID(idx+1), fullyQualify)
 		ctx.WriteString(label)
 	})
 	expr.Format(&fmtCtx)
@@ -106,7 +106,7 @@ func (c *indexedVarContainer) IndexedVarResolvedType(idx int) types.T {
 
 // IndexedVarEval is part of the tree.IndexedVarContainer interface.
 func (c *indexedVarContainer) IndexedVarNodeFormatter(idx int) tree.NodeFormatter {
-	return &varFormatter{label: c.md.ColumnLabel(opt.ColumnID(idx))}
+	return &varFormatter{label: c.md.ColumnAlias(opt.ColumnID(idx))}
 }
 
 type varFormatter struct {

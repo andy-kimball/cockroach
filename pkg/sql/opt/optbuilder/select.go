@@ -43,7 +43,7 @@ const (
 // See Builder.buildStmt for a description of the remaining input and
 // return values.
 func (b *Builder) buildDataSource(
-	texpr tree.TableExpr, indexFlags *tree.IndexFlags, inScope *scope,
+	texpr tree.TableExpr, alias *tree.AliasClause, indexFlags *tree.IndexFlags, inScope *scope,
 ) (outScope *scope) {
 	// NB: The case statements are sorted lexicographically.
 	switch source := texpr.(type) {
@@ -52,7 +52,7 @@ func (b *Builder) buildDataSource(
 			indexFlags = source.IndexFlags
 		}
 
-		outScope = b.buildDataSource(source.Expr, indexFlags, inScope)
+		outScope = b.buildDataSource(source.Expr, &source.As, indexFlags, inScope)
 
 		if source.Ordinality {
 			outScope = b.buildWithOrdinality("ordinality", outScope)
@@ -67,12 +67,10 @@ func (b *Builder) buildDataSource(
 		return b.buildJoin(source, inScope)
 
 	case *tree.TableName:
-		tn := source
-
 		// CTEs take precedence over other data sources.
-		if cte := inScope.resolveCTE(tn); cte != nil {
+		if cte := inScope.resolveCTE(source); cte != nil {
 			if cte.used {
-				panic(builderError{fmt.Errorf("unsupported multiple use of CTE clause %q", tn)})
+				panic(builderError{fmt.Errorf("unsupported multiple use of CTE clause %q", source)})
 			}
 			cte.used = true
 
@@ -85,10 +83,10 @@ func (b *Builder) buildDataSource(
 			return outScope
 		}
 
-		ds := b.resolveDataSource(tn, privilege.SELECT)
+		ds := b.resolveDataSource(source, privilege.SELECT)
 		switch t := ds.(type) {
 		case opt.Table:
-			return b.buildScan(t, tn, nil /* ordinals */, indexFlags, excludeMutations, inScope)
+			return b.buildScan(t, alias, nil /* ordinals */, indexFlags, excludeMutations, inScope)
 		case opt.View:
 			return b.buildView(t, inScope)
 		default:
@@ -96,7 +94,7 @@ func (b *Builder) buildDataSource(
 		}
 
 	case *tree.ParenTableExpr:
-		return b.buildDataSource(source.Expr, indexFlags, inScope)
+		return b.buildDataSource(source.Expr, alias, indexFlags, inScope)
 
 	case *tree.RowsFromExpr:
 		return b.buildZip(source.Items, inScope)
@@ -124,7 +122,7 @@ func (b *Builder) buildDataSource(
 		ds := b.resolveDataSourceRef(source, privilege.SELECT)
 		switch t := ds.(type) {
 		case opt.Table:
-			outScope = b.buildScanFromTableRef(t, source, indexFlags, inScope)
+			outScope = b.buildScanFromTableRef(t, &source.As, source, indexFlags, inScope)
 		default:
 			panic(unimplementedf("view and sequence numeric refs are not supported"))
 		}
@@ -238,7 +236,11 @@ func (b *Builder) renameSource(as tree.AliasClause, scope *scope) {
 // Note, the query SELECT * FROM [53() as t] is unsupported. Column lists must
 // be non-empty
 func (b *Builder) buildScanFromTableRef(
-	tab opt.Table, ref *tree.TableRef, indexFlags *tree.IndexFlags, inScope *scope,
+	tab opt.Table,
+	ref *tree.TableRef,
+	alias *tree.AliasClause,
+	indexFlags *tree.IndexFlags,
+	inScope *scope,
 ) (outScope *scope) {
 	if ref.Columns != nil && len(ref.Columns) == 0 {
 		panic(builderError{pgerror.NewErrorf(pgerror.CodeSyntaxError,
@@ -269,7 +271,7 @@ func (b *Builder) buildScanFromTableRef(
 			ordinals[i] = ord
 		}
 	}
-	return b.buildScan(tab, tab.Name(), ordinals, indexFlags, excludeMutations, inScope)
+	return b.buildScan(tab, alias, ordinals, indexFlags, excludeMutations, inScope)
 }
 
 // buildScan builds a memo group for a ScanOp or VirtualScanOp expression on the
@@ -281,14 +283,22 @@ func (b *Builder) buildScanFromTableRef(
 // return values.
 func (b *Builder) buildScan(
 	tab opt.Table,
-	tn *tree.TableName,
+	alias *tree.AliasClause,
 	ordinals []int,
 	indexFlags *tree.IndexFlags,
 	scanMutationCols bool,
 	inScope *scope,
 ) (outScope *scope) {
 	md := b.factory.Metadata()
+
 	tabID := md.AddTable(tab)
+	if alias != nil {
+		// Use aliases if available, for nicer metadata printing.
+		md.SetTableAlias(tabID, string(alias.Alias))
+		for i, n := 0, tab.ColumnCount(); i < n && i < len(alias.Cols); i++ {
+			md.SetColumnAlias(tabID.ColumnID(i), string(alias.Cols[i]))
+		}
+	}
 
 	colCount := len(ordinals)
 	if colCount == 0 {
@@ -314,10 +324,11 @@ func (b *Builder) buildScan(
 		colID := tabID.ColumnID(ord)
 		tabColIDs.Add(int(colID))
 		name := col.ColName()
+
 		outScope.cols = append(outScope.cols, scopeColumn{
 			id:       colID,
 			name:     name,
-			table:    *tn,
+			table:    *tab.Name(),
 			typ:      col.DatumType(),
 			hidden:   col.IsHidden() || isMutation,
 			mutation: isMutation,
