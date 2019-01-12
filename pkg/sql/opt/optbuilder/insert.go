@@ -534,6 +534,7 @@ func (mb *mutationBuilder) buildInsert(returning tree.ReturningExprs) {
 	private := memo.MutationPrivate{
 		Table:       mb.tabID,
 		InsertCols:  mb.insertColList,
+		ReturnCols:  mb.makeReturnCols(returning),
 		NeedResults: returning != nil,
 	}
 	mb.outScope.expr = mb.b.factory.ConstructInsert(mb.outScope.expr, &private)
@@ -779,6 +780,7 @@ func (mb *mutationBuilder) buildUpsert(returning tree.ReturningExprs) {
 		FetchCols:   mb.fetchColList,
 		UpdateCols:  mb.updateColList,
 		CanaryCol:   mb.canaryColID,
+		ReturnCols:  mb.makeReturnCols(returning),
 		NeedResults: returning != nil,
 	}
 	mb.outScope.expr = mb.b.factory.ConstructUpsert(mb.outScope.expr, &private)

@@ -867,7 +867,11 @@ func (ef *execFactory) ConstructShowTrace(typ tree.ShowTraceType, compact bool) 
 }
 
 func (ef *execFactory) ConstructInsert(
-	input exec.Node, table cat.Table, insertCols exec.ColumnOrdinalSet, rowsNeeded bool,
+	input exec.Node,
+	table cat.Table,
+	insertCols exec.ColumnOrdinalSet,
+	returnCols exec.ColumnOrdinalSet,
+	rowsNeeded bool,
 ) (exec.Node, error) {
 	// Derive insert table and column descriptors.
 	tabDesc := table.(*optTable).desc
@@ -895,18 +899,13 @@ func (ef *execFactory) ConstructInsert(
 
 	// Determine the relational type of the generated insert node.
 	// If rows are not needed, no columns are returned.
-	var returnCols sqlbase.ResultColumns
-	if rowsNeeded {
-		// Insert always returns all non-mutation columns, in the same order they
-		// are defined in the table.
-		returnCols = sqlbase.ResultColumnsFromColDescs(tabDesc.Columns)
-	}
+	resultCols := makeResultColumnList(table, returnCols)
 
 	// Regular path for INSERT.
 	ins := insertNodePool.Get().(*insertNode)
 	*ins = insertNode{
 		source:  input.(planNode),
-		columns: returnCols,
+		columns: resultCols,
 		run: insertRun{
 			ti:          tableInserter{ri: ri},
 			checkHelper: fkTables[tabDesc.ID].CheckHelper,
@@ -922,7 +921,7 @@ func (ef *execFactory) ConstructInsert(
 	// serialize the data-modifying plan to ensure that no data is
 	// observed that hasn't been validated first. See the comments
 	// on BatchedNext() in plan_batch.go.
-	if rowsNeeded {
+	if resultCols != nil {
 		return &spoolNode{source: &serializeNode{source: ins}}, nil
 	}
 
@@ -932,7 +931,12 @@ func (ef *execFactory) ConstructInsert(
 }
 
 func (ef *execFactory) ConstructUpdate(
-	input exec.Node, table cat.Table, fetchCols, updateCols exec.ColumnOrdinalSet, rowsNeeded bool,
+	input exec.Node,
+	table cat.Table,
+	fetchCols exec.ColumnOrdinalSet,
+	updateCols exec.ColumnOrdinalSet,
+	returnCols exec.ColumnOrdinalSet,
+	rowsNeeded bool,
 ) (exec.Node, error) {
 	// Derive table and column descriptors.
 	tabDesc := table.(*optTable).desc
@@ -980,12 +984,7 @@ func (ef *execFactory) ConstructUpdate(
 
 	// Determine the relational type of the generated update node.
 	// If rows are not needed, no columns are returned.
-	var returnCols sqlbase.ResultColumns
-	if rowsNeeded {
-		// Update always returns all non-mutation columns, in the same order they
-		// are defined in the table.
-		returnCols = sqlbase.ResultColumnsFromColDescs(tabDesc.Columns)
-	}
+	resultCols := makeResultColumnList(table, returnCols)
 
 	// updateColsIdx inverts the mapping of UpdateCols to FetchCols. See
 	// the explanatory comments in updateRun.
@@ -997,7 +996,7 @@ func (ef *execFactory) ConstructUpdate(
 	upd := updateNodePool.Get().(*updateNode)
 	*upd = updateNode{
 		source:  input.(planNode),
-		columns: returnCols,
+		columns: resultCols,
 		run: updateRun{
 			tu:          tableUpdater{ru: ru},
 			checkHelper: fkTables[tabDesc.ID].CheckHelper,
@@ -1016,7 +1015,7 @@ func (ef *execFactory) ConstructUpdate(
 	// Serialize the data-modifying plan to ensure that no data is observed that
 	// hasn't been validated first. See the comments on BatchedNext() in
 	// plan_batch.go.
-	if rowsNeeded {
+	if resultCols != nil {
 		return &spoolNode{source: &serializeNode{source: upd}}, nil
 	}
 
@@ -1032,6 +1031,7 @@ func (ef *execFactory) ConstructUpsert(
 	insertCols exec.ColumnOrdinalSet,
 	fetchCols exec.ColumnOrdinalSet,
 	updateCols exec.ColumnOrdinalSet,
+	returnCols exec.ColumnOrdinalSet,
 	rowsNeeded bool,
 ) (exec.Node, error) {
 	// Derive table and column descriptors.
@@ -1089,12 +1089,7 @@ func (ef *execFactory) ConstructUpsert(
 
 	// Determine the relational type of the generated upsert node.
 	// If rows are not needed, no columns are returned.
-	var returnCols sqlbase.ResultColumns
-	if rowsNeeded {
-		// Upsert always returns all non-mutation columns, in the same order they
-		// are defined in the table.
-		returnCols = sqlbase.ResultColumnsFromColDescs(tabDesc.Columns)
-	}
+	resultCols := makeResultColumnList(table, returnCols)
 
 	// updateColsIdx inverts the mapping of UpdateCols to FetchCols. See
 	// the explanatory comments in updateRun.
@@ -1107,7 +1102,7 @@ func (ef *execFactory) ConstructUpsert(
 	ups := upsertNodePool.Get().(*upsertNode)
 	*ups = upsertNode{
 		source:  input.(planNode),
-		columns: returnCols,
+		columns: resultCols,
 		run: upsertRun{
 			checkHelper: fkTables[tabDesc.ID].CheckHelper,
 			insertCols:  insertColDescs,
@@ -1133,7 +1128,7 @@ func (ef *execFactory) ConstructUpsert(
 	// Serialize the data-modifying plan to ensure that no data is observed that
 	// hasn't been validated first. See the comments on BatchedNext() in
 	// plan_batch.go.
-	if rowsNeeded {
+	if resultCols != nil {
 		return &spoolNode{source: &serializeNode{source: ups}}, nil
 	}
 
@@ -1143,7 +1138,11 @@ func (ef *execFactory) ConstructUpsert(
 }
 
 func (ef *execFactory) ConstructDelete(
-	input exec.Node, table cat.Table, fetchCols exec.ColumnOrdinalSet, rowsNeeded bool,
+	input exec.Node,
+	table cat.Table,
+	fetchCols exec.ColumnOrdinalSet,
+	returnCols exec.ColumnOrdinalSet,
+	rowsNeeded bool,
 ) (exec.Node, error) {
 	// Derive table and column descriptors.
 	tabDesc := table.(*optTable).desc
@@ -1181,18 +1180,13 @@ func (ef *execFactory) ConstructDelete(
 
 	// Determine the relational type of the generated delete node.
 	// If rows are not needed, no columns are returned.
-	var returnCols sqlbase.ResultColumns
-	if rowsNeeded {
-		// Delete always returns all non-mutation columns, in the same order they
-		// are defined in the table.
-		returnCols = sqlbase.ResultColumnsFromColDescs(tabDesc.Columns)
-	}
+	resultCols := makeResultColumnList(table, returnCols)
 
 	// Now make a delete node. We use a pool.
 	del := deleteNodePool.Get().(*deleteNode)
 	*del = deleteNode{
 		source:  input.(planNode),
-		columns: returnCols,
+		columns: resultCols,
 		run: deleteRun{
 			td:         tableDeleter{rd: rd, alloc: &ef.planner.alloc},
 			rowsNeeded: rowsNeeded,
@@ -1202,7 +1196,7 @@ func (ef *execFactory) ConstructDelete(
 	// Serialize the data-modifying plan to ensure that no data is observed that
 	// hasn't been validated first. See the comments on BatchedNext() in
 	// plan_batch.go.
-	if rowsNeeded {
+	if resultCols != nil {
 		return &spoolNode{source: &serializeNode{source: del}}, nil
 	}
 
@@ -1266,6 +1260,26 @@ func makeColDescList(table cat.Table, cols exec.ColumnOrdinalSet) []sqlbase.Colu
 		colDescs = append(colDescs, *extractColumnDescriptor(table.Column(i)))
 	}
 	return colDescs
+}
+
+// makeResultColumnList returns a list of ResultColumns. Columns are included if
+// their ordinal position in the given table is in the cols set.
+func makeResultColumnList(table cat.Table, cols exec.ColumnOrdinalSet) sqlbase.ResultColumns {
+	if cols.Empty() {
+		return nil
+	}
+
+	resultCols := make(sqlbase.ResultColumns, 0, cols.Len())
+	for i, n := 0, table.ColumnCount(); i < n; i++ {
+		if !cols.Contains(i) {
+			continue
+		}
+		col := table.Column(i)
+		resultCols = append(resultCols, sqlbase.ResultColumn{
+			Name: string(col.ColName()), Typ: col.DatumType(), Hidden: col.IsHidden(),
+		})
+	}
+	return resultCols
 }
 
 // makeScanColumnsConfig builds a scanColumnsConfig struct by constructing a

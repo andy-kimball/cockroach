@@ -194,13 +194,22 @@ func (f *stubFactory) ConstructShowTrace(typ tree.ShowTraceType, compact bool) (
 }
 
 func (f *stubFactory) ConstructInsert(
-	input exec.Node, table cat.Table, insertCols exec.ColumnOrdinalSet, rowsNeeded bool,
+	input exec.Node,
+	table cat.Table,
+	insertCols exec.ColumnOrdinalSet,
+	returnCols exec.ColumnOrdinalSet,
+	rowsNeeded bool,
 ) (exec.Node, error) {
 	return struct{}{}, nil
 }
 
 func (f *stubFactory) ConstructUpdate(
-	input exec.Node, table cat.Table, fetchCols, updateCols exec.ColumnOrdinalSet, rowsNeeded bool,
+	input exec.Node,
+	table cat.Table,
+	fetchCols exec.ColumnOrdinalSet,
+	updateCols exec.ColumnOrdinalSet,
+	returnCols exec.ColumnOrdinalSet,
+	rowsNeeded bool,
 ) (exec.Node, error) {
 	return struct{}{}, nil
 }
@@ -218,13 +227,18 @@ func (f *stubFactory) ConstructUpsert(
 	insertCols exec.ColumnOrdinalSet,
 	fetchCols exec.ColumnOrdinalSet,
 	updateCols exec.ColumnOrdinalSet,
+	returnCols exec.ColumnOrdinalSet,
 	rowsNeeded bool,
 ) (exec.Node, error) {
 	return struct{}{}, nil
 }
 
 func (f *stubFactory) ConstructDelete(
-	input exec.Node, table cat.Table, fetchCols exec.ColumnOrdinalSet, rowsNeeded bool,
+	input exec.Node,
+	table cat.Table,
+	fetchCols exec.ColumnOrdinalSet,
+	returnCols exec.ColumnOrdinalSet,
+	rowsNeeded bool,
 ) (exec.Node, error) {
 	return struct{}{}, nil
 }

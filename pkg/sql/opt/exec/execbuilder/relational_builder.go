@@ -1138,7 +1138,14 @@ func (b *Builder) buildInsert(ins *memo.InsertExpr) (execPlan, error) {
 	// Construct the Insert node.
 	tab := b.mem.Metadata().Table(ins.Table)
 	insertOrds := ordinalSetFromColList(ins.InsertCols)
-	node, err := b.factory.ConstructInsert(input.root, tab, insertOrds, ins.NeedResults)
+	returnOrds := ordinalSetFromColSet(ins.Table, ins.ReturnCols)
+	node, err := b.factory.ConstructInsert(
+		input.root,
+		tab,
+		insertOrds,
+		returnOrds,
+		ins.NeedResults,
+	)
 	if err != nil {
 		return execPlan{}, err
 	}
@@ -1183,7 +1190,15 @@ func (b *Builder) buildUpdate(upd *memo.UpdateExpr) (execPlan, error) {
 	tab := md.Table(upd.Table)
 	fetchColOrds := ordinalSetFromColList(upd.FetchCols)
 	updateColOrds := ordinalSetFromColList(upd.UpdateCols)
-	node, err := b.factory.ConstructUpdate(input.root, tab, fetchColOrds, updateColOrds, upd.NeedResults)
+	returnOrds := ordinalSetFromColSet(upd.Table, upd.ReturnCols)
+	node, err := b.factory.ConstructUpdate(
+		input.root,
+		tab,
+		fetchColOrds,
+		updateColOrds,
+		returnOrds,
+		upd.NeedResults,
+	)
 	if err != nil {
 		return execPlan{}, err
 	}
@@ -1233,8 +1248,17 @@ func (b *Builder) buildUpsert(ups *memo.UpsertExpr) (execPlan, error) {
 	insertColOrds := ordinalSetFromColList(ups.InsertCols)
 	fetchColOrds := ordinalSetFromColList(ups.FetchCols)
 	updateColOrds := ordinalSetFromColList(ups.UpdateCols)
+	returnOrds := ordinalSetFromColSet(ups.Table, ups.ReturnCols)
 	node, err := b.factory.ConstructUpsert(
-		input.root, tab, canaryCol, insertColOrds, fetchColOrds, updateColOrds, ups.NeedResults)
+		input.root,
+		tab,
+		canaryCol,
+		insertColOrds,
+		fetchColOrds,
+		updateColOrds,
+		returnOrds,
+		ups.NeedResults,
+	)
 	if err != nil {
 		return execPlan{}, err
 	}
@@ -1270,7 +1294,14 @@ func (b *Builder) buildDelete(del *memo.DeleteExpr) (execPlan, error) {
 	md := b.mem.Metadata()
 	tab := md.Table(del.Table)
 	fetchColOrds := ordinalSetFromColList(del.FetchCols)
-	node, err := b.factory.ConstructDelete(input.root, tab, fetchColOrds, del.NeedResults)
+	returnOrds := ordinalSetFromColSet(del.Table, del.ReturnCols)
+	node, err := b.factory.ConstructDelete(
+		input.root,
+		tab,
+		fetchColOrds,
+		returnOrds,
+		del.NeedResults,
+	)
 	if err != nil {
 		return execPlan{}, err
 	}
@@ -1454,6 +1485,16 @@ func ordinalSetFromColList(colList opt.ColList) exec.ColumnOrdinalSet {
 			res.Add(i)
 		}
 	}
+	return res
+}
+
+// ordinalSetFromColSet returns the set of ordinal positions of each column in
+// the given set. Positions are with respect to the columns' owning table.
+func ordinalSetFromColSet(tabID opt.TableID, colSet opt.ColSet) exec.ColumnOrdinalSet {
+	var res opt.ColSet
+	colSet.ForEach(func(i int) {
+		res.Add(int(tabID.ColumnOrdinal(opt.ColumnID(i))))
+	})
 	return res
 }
 

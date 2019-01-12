@@ -91,6 +91,7 @@ func (mb *mutationBuilder) buildDelete(returning tree.ReturningExprs) {
 	private := memo.MutationPrivate{
 		Table:       mb.tabID,
 		FetchCols:   mb.fetchColList,
+		ReturnCols:  mb.makeReturnCols(returning),
 		NeedResults: returning != nil,
 	}
 	mb.outScope.expr = mb.b.factory.ConstructDelete(mb.outScope.expr, &private)

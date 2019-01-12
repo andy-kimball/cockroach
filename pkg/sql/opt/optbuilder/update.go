@@ -335,6 +335,7 @@ func (mb *mutationBuilder) buildUpdate(returning tree.ReturningExprs) {
 		Table:       mb.tabID,
 		FetchCols:   mb.fetchColList,
 		UpdateCols:  mb.updateColList,
+		ReturnCols:  mb.makeReturnCols(returning),
 		NeedResults: returning != nil,
 	}
 	mb.outScope.expr = mb.b.factory.ConstructUpdate(mb.outScope.expr, &private)
