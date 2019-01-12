@@ -870,8 +870,7 @@ func (ef *execFactory) ConstructInsert(
 	input exec.Node,
 	table cat.Table,
 	insertCols exec.ColumnOrdinalSet,
-	returnCols exec.ColumnOrdinalSet,
-	rowsNeeded bool,
+	returnCols exec.ColumnOrdinalList,
 ) (exec.Node, error) {
 	// Derive insert table and column descriptors.
 	tabDesc := table.(*optTable).desc
@@ -909,7 +908,7 @@ func (ef *execFactory) ConstructInsert(
 		run: insertRun{
 			ti:          tableInserter{ri: ri},
 			checkHelper: fkTables[tabDesc.ID].CheckHelper,
-			rowsNeeded:  rowsNeeded,
+			rowsNeeded:  returnCols != nil,
 			iVarContainerForComputedCols: sqlbase.RowIndexedVarContainer{
 				Cols:    tabDesc.Columns,
 				Mapping: ri.InsertColIDtoRowIndex,
@@ -921,7 +920,7 @@ func (ef *execFactory) ConstructInsert(
 	// serialize the data-modifying plan to ensure that no data is
 	// observed that hasn't been validated first. See the comments
 	// on BatchedNext() in plan_batch.go.
-	if resultCols != nil {
+	if returnCols != nil {
 		return &spoolNode{source: &serializeNode{source: ins}}, nil
 	}
 
@@ -935,8 +934,7 @@ func (ef *execFactory) ConstructUpdate(
 	table cat.Table,
 	fetchCols exec.ColumnOrdinalSet,
 	updateCols exec.ColumnOrdinalSet,
-	returnCols exec.ColumnOrdinalSet,
-	rowsNeeded bool,
+	returnCols exec.ColumnOrdinalList,
 ) (exec.Node, error) {
 	// Derive table and column descriptors.
 	tabDesc := table.(*optTable).desc
@@ -1000,7 +998,7 @@ func (ef *execFactory) ConstructUpdate(
 		run: updateRun{
 			tu:          tableUpdater{ru: ru},
 			checkHelper: fkTables[tabDesc.ID].CheckHelper,
-			rowsNeeded:  rowsNeeded,
+			rowsNeeded:  returnCols != nil,
 			iVarContainerForComputedCols: sqlbase.RowIndexedVarContainer{
 				CurSourceRow: make(tree.Datums, len(ru.FetchCols)),
 				Cols:         ru.FetchCols,
@@ -1015,7 +1013,7 @@ func (ef *execFactory) ConstructUpdate(
 	// Serialize the data-modifying plan to ensure that no data is observed that
 	// hasn't been validated first. See the comments on BatchedNext() in
 	// plan_batch.go.
-	if resultCols != nil {
+	if returnCols != nil {
 		return &spoolNode{source: &serializeNode{source: upd}}, nil
 	}
 
@@ -1031,8 +1029,7 @@ func (ef *execFactory) ConstructUpsert(
 	insertCols exec.ColumnOrdinalSet,
 	fetchCols exec.ColumnOrdinalSet,
 	updateCols exec.ColumnOrdinalSet,
-	returnCols exec.ColumnOrdinalSet,
-	rowsNeeded bool,
+	returnCols exec.ColumnOrdinalList,
 ) (exec.Node, error) {
 	// Derive table and column descriptors.
 	tabDesc := table.(*optTable).desc
@@ -1114,7 +1111,7 @@ func (ef *execFactory) ConstructUpsert(
 				tableUpserterBase: tableUpserterBase{
 					ri:          ri,
 					alloc:       &ef.planner.alloc,
-					collectRows: rowsNeeded,
+					collectRows: returnCols != nil,
 				},
 				canaryOrdinal: int(canaryCol),
 				fkTables:      fkTables,
@@ -1128,7 +1125,7 @@ func (ef *execFactory) ConstructUpsert(
 	// Serialize the data-modifying plan to ensure that no data is observed that
 	// hasn't been validated first. See the comments on BatchedNext() in
 	// plan_batch.go.
-	if resultCols != nil {
+	if returnCols != nil {
 		return &spoolNode{source: &serializeNode{source: ups}}, nil
 	}
 
@@ -1141,8 +1138,7 @@ func (ef *execFactory) ConstructDelete(
 	input exec.Node,
 	table cat.Table,
 	fetchCols exec.ColumnOrdinalSet,
-	returnCols exec.ColumnOrdinalSet,
-	rowsNeeded bool,
+	returnCols exec.ColumnOrdinalList,
 ) (exec.Node, error) {
 	// Derive table and column descriptors.
 	tabDesc := table.(*optTable).desc
@@ -1189,14 +1185,14 @@ func (ef *execFactory) ConstructDelete(
 		columns: resultCols,
 		run: deleteRun{
 			td:         tableDeleter{rd: rd, alloc: &ef.planner.alloc},
-			rowsNeeded: rowsNeeded,
+			rowsNeeded: returnCols != nil,
 		},
 	}
 
 	// Serialize the data-modifying plan to ensure that no data is observed that
 	// hasn't been validated first. See the comments on BatchedNext() in
 	// plan_batch.go.
-	if resultCols != nil {
+	if returnCols != nil {
 		return &spoolNode{source: &serializeNode{source: del}}, nil
 	}
 
@@ -1264,20 +1260,19 @@ func makeColDescList(table cat.Table, cols exec.ColumnOrdinalSet) []sqlbase.Colu
 
 // makeResultColumnList returns a list of ResultColumns. Columns are included if
 // their ordinal position in the given table is in the cols set.
-func makeResultColumnList(table cat.Table, cols exec.ColumnOrdinalSet) sqlbase.ResultColumns {
-	if cols.Empty() {
+func makeResultColumnList(table cat.Table, cols exec.ColumnOrdinalList) sqlbase.ResultColumns {
+	if cols == nil {
 		return nil
 	}
 
-	resultCols := make(sqlbase.ResultColumns, 0, cols.Len())
-	for i, n := 0, table.ColumnCount(); i < n; i++ {
-		if !cols.Contains(i) {
-			continue
+	resultCols := make(sqlbase.ResultColumns, 0, len(cols))
+	for i, ord := range cols {
+		if ord != -1 {
+			col := table.Column(i)
+			resultCols = append(resultCols, sqlbase.ResultColumn{
+				Name: string(col.ColName()), Typ: col.DatumType(), Hidden: col.IsHidden(),
+			})
 		}
-		col := table.Column(i)
-		resultCols = append(resultCols, sqlbase.ResultColumn{
-			Name: string(col.ColName()), Typ: col.DatumType(), Hidden: col.IsHidden(),
-		})
 	}
 	return resultCols
 }

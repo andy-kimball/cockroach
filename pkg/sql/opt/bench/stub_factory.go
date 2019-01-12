@@ -197,8 +197,7 @@ func (f *stubFactory) ConstructInsert(
 	input exec.Node,
 	table cat.Table,
 	insertCols exec.ColumnOrdinalSet,
-	returnCols exec.ColumnOrdinalSet,
-	rowsNeeded bool,
+	returnCols exec.ColumnOrdinalList,
 ) (exec.Node, error) {
 	return struct{}{}, nil
 }
@@ -208,14 +207,7 @@ func (f *stubFactory) ConstructUpdate(
 	table cat.Table,
 	fetchCols exec.ColumnOrdinalSet,
 	updateCols exec.ColumnOrdinalSet,
-	returnCols exec.ColumnOrdinalSet,
-	rowsNeeded bool,
-) (exec.Node, error) {
-	return struct{}{}, nil
-}
-
-func (f *stubFactory) ConstructCreateTable(
-	input exec.Node, schema cat.Schema, ct *tree.CreateTable,
+	returnCols exec.ColumnOrdinalList,
 ) (exec.Node, error) {
 	return struct{}{}, nil
 }
@@ -227,8 +219,7 @@ func (f *stubFactory) ConstructUpsert(
 	insertCols exec.ColumnOrdinalSet,
 	fetchCols exec.ColumnOrdinalSet,
 	updateCols exec.ColumnOrdinalSet,
-	returnCols exec.ColumnOrdinalSet,
-	rowsNeeded bool,
+	returnCols exec.ColumnOrdinalList,
 ) (exec.Node, error) {
 	return struct{}{}, nil
 }
@@ -237,8 +228,13 @@ func (f *stubFactory) ConstructDelete(
 	input exec.Node,
 	table cat.Table,
 	fetchCols exec.ColumnOrdinalSet,
-	returnCols exec.ColumnOrdinalSet,
-	rowsNeeded bool,
+	returnCols exec.ColumnOrdinalList,
+) (exec.Node, error) {
+	return struct{}{}, nil
+}
+
+func (f *stubFactory) ConstructCreateTable(
+	input exec.Node, schema cat.Schema, ct *tree.CreateTable,
 ) (exec.Node, error) {
 	return struct{}{}, nil
 }

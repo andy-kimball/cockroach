@@ -241,15 +241,21 @@ type Factory interface {
 	// same order they're defined. The insertCols set contains the ordinal
 	// positions of columns in the table into which values are inserted. All
 	// columns are expected to be present except delete-only mutation columns,
-	// since those do not need to participate in an insert operation. If a
-	// RETURNING clause needs the inserted row(s) as output, then returnCols
-	// specifies the columns which need to be projected by the operator.
+	// since those do not need to participate in an insert operation.
+	//
+	// If a RETURNING clause needs the inserted row(s) as output, then returnCols
+	// maps from
+
+	// is defined. Its length always equals the number of non-mutation columns in
+	// the table. It maps from
+
+	// specifies the ordinal positions of input columns which need to be projected
+	// by the operator. Otherwise, it is nil.
 	ConstructInsert(
 		input Node,
 		table cat.Table,
 		insertCols ColumnOrdinalSet,
-		returnCols ColumnOrdinalSet,
-		rowsNeeded bool,
+		returnCols ColumnOrdinalList,
 	) (Node, error)
 
 	// ConstructUpdate creates a node that implements an UPDATE statement. The
@@ -263,15 +269,15 @@ type Factory interface {
 	// fetch and update columns in the target table. The input must contain those
 	// columns in the same order as they appear in the table schema, with the
 	// fetch columns first and the update columns second. If a RETURNING clause
-	// needs the updated row(s) as output, then returnCols specifies the columns
-	// which need to be projected by the operator.
+	// needs the updated row(s) as output, then returnCols specifies the ordinal
+	// positions of input columns which need to be projected by the operator.
+	// Otherwise, it is nil.
 	ConstructUpdate(
 		input Node,
 		table cat.Table,
 		fetchCols ColumnOrdinalSet,
 		updateCols ColumnOrdinalSet,
-		returnCols ColumnOrdinalSet,
-		rowsNeeded bool,
+		returnCols ColumnOrdinalList,
 	) (Node, error)
 
 	// ConstructUpsert creates a node that implements an INSERT..ON CONFLICT or
@@ -299,7 +305,8 @@ type Factory interface {
 	// new value for column {1} of the table.
 	//
 	// If a RETURNING clause needs the upserted row(s) as output, then returnCols
-	// specifies the columns which need to be projected by the operator.
+	// specifies the ordinal positions of input columns which need to be projected
+	// by the operator. Otherwise, it is nil.
 	ConstructUpsert(
 		input Node,
 		table cat.Table,
@@ -307,8 +314,7 @@ type Factory interface {
 		insertCols ColumnOrdinalSet,
 		fetchCols ColumnOrdinalSet,
 		updateCols ColumnOrdinalSet,
-		returnCols ColumnOrdinalSet,
-		rowsNeeded bool,
+		returnCols ColumnOrdinalList,
 	) (Node, error)
 
 	// ConstructDelete creates a node that implements a DELETE statement. The
@@ -318,14 +324,13 @@ type Factory interface {
 	// The fetchCols set contains the ordinal positions of the fetch columns in
 	// the target table. The input must contain those columns in the same order
 	// as they appear in the table schema. If a RETURNING clause needs the deleted
-	// row(s) as output, then returnCols specifies the columns which need to be
-	// projected by the operator.
+	// row(s) as output, then returnCols specifies the ordinal positions of input
+	// columns which need to be projected by the operator. Otherwise, it is nil.
 	ConstructDelete(
 		input Node,
 		table cat.Table,
 		fetchCols ColumnOrdinalSet,
-		returnCols ColumnOrdinalSet,
-		rowsNeeded bool,
+		returnCols ColumnOrdinalList,
 	) (Node, error)
 
 	// ConstructCreateTable returns a node that implements a CREATE TABLE
@@ -382,6 +387,11 @@ type ColumnOrdinal int32
 
 // ColumnOrdinalSet contains a set of ColumnOrdinal values as ints.
 type ColumnOrdinalSet = util.FastIntSet
+
+// ColumnOrdinalList contains a list of ColumnOrdinal values as ints. Ints are
+// used instead of ColumnOrdinals so that it is compatible with the index
+// mapping lists used in the execution engine.
+type ColumnOrdinalList []int
 
 // AggInfo represents an aggregation (see ConstructGroupBy).
 type AggInfo struct {
