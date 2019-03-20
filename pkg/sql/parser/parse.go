@@ -301,16 +301,16 @@ func ParseExpr(sql string) (tree.Expr, error) {
 }
 
 // ParseType parses a column type.
-func ParseType(sql string) (coltypes.CastTargetType, error) {
-	expr, err := ParseExpr(fmt.Sprintf("1::%s", sql))
+func ParseType(sql string) (coltypes.T, error) {
+	expr, err := ParseExpr(fmt.Sprintf("1:::%s", sql))
 	if err != nil {
 		return nil, err
 	}
 
-	cast, ok := expr.(*tree.CastExpr)
+	ann, ok := expr.(*tree.AnnotateTypeExpr)
 	if !ok {
-		return nil, pgerror.NewAssertionErrorf("expected a tree.CastExpr, but found %T", expr)
+		return nil, pgerror.NewAssertionErrorf("expected a tree.AnnotateTypeExpr, but found %T", expr)
 	}
 
-	return cast.Type, nil
+	return ann.Type, nil
 }

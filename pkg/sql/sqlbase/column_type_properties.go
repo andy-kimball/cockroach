@@ -709,26 +709,7 @@ func LimitValueWidth(
 			}
 		}
 	case ColumnType_DECIMAL:
-		if inDec, ok := inVal.(*tree.DDecimal); ok {
-			if inDec.Form != apd.Finite || typ.Precision == 0 {
-				// Non-finite form or unlimited target precision, so no need to limit.
-				break
-			}
-			if int64(typ.Precision) >= inDec.NumDigits() && typ.Width == inDec.Exponent {
-				// Precision and scale of target column are sufficient.
-				break
-			}
-
-			var outDec tree.DDecimal
-			outDec.Set(&inDec.Decimal)
-			err := tree.LimitDecimalWidth(&outDec.Decimal, int(typ.Precision), int(typ.Width))
-			if err != nil {
-				return nil, pgerror.Wrapf(err, pgerror.CodeDataExceptionError,
-					"type %s (column %q)",
-					typ.SQLString(), tree.ErrNameStringP(name))
-			}
-			return &outDec, nil
-		}
+		return LimitDecimalValueWidth(inVal, typ.Precision, typ.Width, typ.SQLString(), *name)
 	case ColumnType_ARRAY:
 		if inArr, ok := inVal.(*tree.DArray); ok {
 			var outArr *tree.DArray
@@ -758,6 +739,33 @@ func LimitValueWidth(
 		}
 	}
 	return inVal, nil
+}
+
+func LimitDecimalValueWidth(
+	inVal tree.Datum, precision, width int32, typName, colName string,
+) (outVal tree.Datum, err error) {
+	inDec, ok := inVal.(*tree.DDecimal)
+	if !ok {
+		return inVal, nil
+	}
+	if inDec.Form != apd.Finite || precision == 0 {
+		// Non-finite form or unlimited target precision, so no need to limit.
+		return inVal, nil
+	}
+	if int64(precision) >= inDec.NumDigits() && width == inDec.Exponent {
+		// Precision and scale of target column are sufficient.
+		return inVal, nil
+	}
+
+	var outDec tree.DDecimal
+	outDec.Set(&inDec.Decimal)
+	err = tree.LimitDecimalWidth(&outDec.Decimal, int(precision), int(width))
+	if err != nil {
+		return nil, pgerror.Wrapf(err, pgerror.CodeDataExceptionError,
+			"type %s (column %q)",
+			typName, tree.ErrNameStringP(&colName))
+	}
+	return &outDec, nil
 }
 
 // elementColumnType works on a ColumnType with semantic type ARRAY

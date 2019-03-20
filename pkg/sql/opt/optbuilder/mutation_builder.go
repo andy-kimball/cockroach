@@ -25,6 +25,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/sql/sem/tree"
 	"github.com/cockroachdb/cockroach/pkg/sql/sem/types"
 	"github.com/cockroachdb/cockroach/pkg/sql/sqlbase"
+	"github.com/cockroachdb/cockroach/pkg/util"
 )
 
 // mutationBuilder is a helper struct that supports building Insert, Update,
@@ -78,17 +79,21 @@ type mutationBuilder struct {
 	// clause.
 	updateColList opt.ColList
 
-	// upsertColList is an ordered list of IDs of input columns which choose
-	// between an insert or update column using a CASE expression:
+	// returnColList is an ordered list of IDs of input columns which contain the
+	// final values for the target table. If a RETURNING clause is present, then
+	// it will return the values from these columns. Note that some of the return
+	// values represent brand new values that will be set by this mutation. But
+	// others may be existing values that remain unchanged. This list is also
+	// useful for computing check constraints, since they must be computed over
+	// the final set of values, after all mutations have been applied. Note that
+	// delete-only columns may be zero if they're never referenced by the operator
+	// (never returned, never mutated, never part of check constraint expression,
+	// etc).
 	//
-	//   CASE WHEN canary_col IS NULL THEN ins_col ELSE upd_col END
-	//
-	// These columns are used to compute constraints and to return result rows.
-	// The length of upsertColList is always equal to the number of columns in
+	// The length of returnColList is always equal to the number of columns in
 	// the target table, including mutation columns. Table columns which do not
-	// need to be updated are set to zero. upsertColList is empty if this is not
-	// an Upsert operator.
-	upsertColList opt.ColList
+	// need to be updated are set to zero.
+	returnScopeOrds []int
 
 	// checkColList is an ordered list of IDs of input columns which contain the
 	// boolean results of evaluating check constraint expressions defined on the
@@ -123,6 +128,12 @@ func (mb *mutationBuilder) init(b *Builder, op opt.Operator, tab cat.Table, alia
 	mb.tab = tab
 	mb.alias = alias
 	mb.targetColList = make(opt.ColList, 0, tab.DeletableColumnCount())
+
+	// returnScopeOrds starts with uninitialized ordinals.
+	mb.returnScopeOrds = make([]int, tab.DeletableColumnCount())
+	for i := range mb.returnScopeOrds {
+		mb.returnScopeOrds[i] = -1
+	}
 
 	// Add the table and its columns (including mutation columns) to metadata.
 	mb.tabID = mb.md.AddTableWithAlias(tab, &mb.alias)
@@ -179,6 +190,7 @@ func (mb *mutationBuilder) buildInputForUpdateOrDelete(
 	mb.fetchColList = make(opt.ColList, mb.tab.DeletableColumnCount())
 	for i := range mb.outScope.cols {
 		mb.fetchColList[i] = mb.outScope.cols[i].id
+		mb.returnScopeOrds[i] = i
 	}
 }
 
@@ -355,8 +367,9 @@ func (mb *mutationBuilder) addSynthesizedCols(
 		scopeCol.table = *mb.tab.Name()
 		scopeCol.name = tabCol.ColName()
 
-		// Store id of newly synthesized column in corresponding list slot.
+		// Store id of newly synthesized column in corresponding list slots.
 		colList[i] = scopeCol.id
+		mb.returnScopeOrds[i] = len(projectionsScope.cols) - 1
 
 		// Add corresponding target column.
 		mb.targetColList = append(mb.targetColList, tabColID)
@@ -369,6 +382,37 @@ func (mb *mutationBuilder) addSynthesizedCols(
 	}
 }
 
+/*
+func (mb *mutationBuilder) limitCols() {
+	var projections memo.ProjectionsExpr
+	var passthrough opt.ColSet
+	for i, n := 0, mb.tab.DeletableColumnCount(); i < n; i++ {
+		colID := mb.mapToInputColID(i)
+		col := mb.tab.Column(i)
+		if maybeLimitColType(col.DatumType()) {
+
+		} else {
+			passthrough.Add(int())
+		}
+
+		colTyp := col.ColType()
+
+	}
+
+	return mb.b.factory.ConstructProject(input, projections, passthrough)
+}
+
+func maybeLimitColType(typ types.T) bool {
+	typ = types.UnwrapType(typ)
+	if typ.Equivalent(types.Decimal) {
+		return true
+	}
+	if arr, ok := typ.(types.TArray); ok {
+		return maybeLimitColType(arr.Typ)
+	}
+	return false
+}
+*/
 // addCheckConstraintCols synthesizes a boolean output column for each check
 // constraint defined on the target table. The mutation operator will report
 // a constraint violation error if the value of the column is false.
@@ -404,26 +448,22 @@ func (mb *mutationBuilder) addCheckConstraintCols() {
 // has each table column name, and that name refers to the column with the final
 // value that the mutation applies.
 func (mb *mutationBuilder) disambiguateColumns() {
-	for i, n := 0, mb.tab.DeletableColumnCount(); i < n; i++ {
-		colName := mb.tab.Column(i).ColName()
-		colID := mb.mapToInputColID(i)
-		if colID == 0 {
-			// Column not involved in the statement, so skip it (e.g. a delete-only
-			// column in an Insert statement).
-			continue
+	// Get list of scope column ordinals that need to be preserved.
+	var ordSet util.FastIntSet
+	for _, ord := range mb.returnScopeOrds {
+		if ord != -1 {
+			ordSet.Add(ord)
 		}
-		for i := range mb.outScope.cols {
-			col := &mb.outScope.cols[i]
-			if col.name == colName {
-				if col.id == colID {
-					// Use table name, not alias name, since computed column
-					// expressions will not reference aliases.
-					col.table = *mb.tab.Name()
-				} else {
-					// Clear name so that it will never match.
-					col.clearName()
-				}
-			}
+	}
+
+	// Clear any names that are not part of ordSet. For remaining names, use table
+	// name, not alias name, since computed column expressions will not reference
+	// aliases.
+	for i := range mb.outScope.cols {
+		if ordSet.Contains(i) {
+			mb.outScope.cols[i].table = *mb.tab.Name()
+		} else {
+			mb.outScope.cols[i].clearName()
 		}
 	}
 }
@@ -444,52 +484,16 @@ func (mb *mutationBuilder) makeMutationPrivate(needResults bool) *memo.MutationP
 		// Only non-mutation columns are output columns. ReturnCols needs to have
 		// DeletableColumnCount entries, but only the first ColumnCount entries
 		// can be non-zero.
-		private.ReturnCols = make(opt.ColList, mb.tab.DeletableColumnCount())
+		private.ReturnCols = make(opt.ColList, len(mb.returnScopeOrds))
 		for i, n := 0, mb.tab.ColumnCount(); i < n; i++ {
-			private.ReturnCols[i] = mb.mapToInputColID(i)
-			if private.ReturnCols[i] == 0 {
+			if mb.returnScopeOrds[i] == -1 {
 				panic(fmt.Sprintf("column %d is not available in the mutation input", i))
 			}
+			private.ReturnCols[i] = mb.outScope.cols[mb.returnScopeOrds[i]].id
 		}
 	}
 
 	return private
-}
-
-// mapToInputColID returns the ID of the input column that provides the final
-// value for the column at the given ordinal position in the table. This value
-// might mutate the column, or it might be returned by the mutation statement,
-// or it might not be used at all. Columns take priority in this order:
-//
-//   upsert, update, fetch, insert
-//
-// If an upsert column is available, then it already combines an update/fetch
-// value with an insert value, so it takes priority. If an update column is
-// available, then it overrides any fetch value. Finally, the relative priority
-// of fetch and insert columns doesn't matter, since they're only used together
-// in the upsert case where an upsert column would be available.
-//
-// If the column is never referenced by the statement, then mapToInputColID
-// returns 0. This would be the case for delete-only columns in an Insert
-// statement, because they're neither fetched nor mutated.
-func (mb *mutationBuilder) mapToInputColID(ord int) opt.ColumnID {
-	switch {
-	case mb.upsertColList != nil && mb.upsertColList[ord] != 0:
-		return mb.upsertColList[ord]
-
-	case mb.updateColList != nil && mb.updateColList[ord] != 0:
-		return mb.updateColList[ord]
-
-	case mb.fetchColList != nil && mb.fetchColList[ord] != 0:
-		return mb.fetchColList[ord]
-
-	case mb.insertColList != nil && mb.insertColList[ord] != 0:
-		return mb.insertColList[ord]
-
-	default:
-		// Column is never referenced by the statement.
-		return 0
-	}
 }
 
 // buildReturning wraps the input expression with a Project operator that
@@ -654,5 +658,5 @@ func checkDatumTypeFitsColumnType(col cat.Column, typ types.T) {
 	colName := string(col.ColName())
 	panic(pgerror.NewErrorf(pgerror.CodeDatatypeMismatchError,
 		"value type %s doesn't match type %s of column %q",
-		typ, col.ColTypeStr(), tree.ErrNameString(colName)))
+		typ, col.ColType().String(), tree.ErrNameString(colName)))
 }

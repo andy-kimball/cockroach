@@ -26,6 +26,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/keys"
 	"github.com/cockroachdb/cockroach/pkg/roachpb"
 	"github.com/cockroachdb/cockroach/pkg/settings/cluster"
+	"github.com/cockroachdb/cockroach/pkg/sql/coltypes"
 	"github.com/cockroachdb/cockroach/pkg/sql/opt/cat"
 	"github.com/cockroachdb/cockroach/pkg/sql/parser"
 	"github.com/cockroachdb/cockroach/pkg/sql/pgwire/pgerror"
@@ -2804,9 +2805,15 @@ func (desc *ColumnDescriptor) DatumType() types.T {
 	return desc.Type.ToDatumType()
 }
 
-// ColTypeStr is part of the cat.Column interface.
-func (desc *ColumnDescriptor) ColTypeStr() string {
-	return desc.Type.SQLString()
+// ColType is part of the cat.Column interface.
+func (desc *ColumnDescriptor) ColType() coltypes.T {
+	// ParseType should never fail.
+	s := desc.Type.SQLString()
+	t, err := parser.ParseType(s)
+	if err != nil {
+		panic(err)
+	}
+	return t
 }
 
 // IsHidden is part of the cat.Column interface.

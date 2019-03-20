@@ -543,6 +543,7 @@ func (mb *mutationBuilder) buildInputForInsert(inScope *scope, inputRows *tree.S
 	//   1. Type check each column
 	//   2. Assign name to each column
 	//   3. Add id of each column to the insertColList
+	//   4. Record ordinal position of scope columns containing insertion values
 	for i := range mb.outScope.cols {
 		inCol := &mb.outScope.cols[i]
 		ord := mb.tabID.ColumnOrdinal(mb.targetColList[i])
@@ -558,6 +559,10 @@ func (mb *mutationBuilder) buildInputForInsert(inScope *scope, inputRows *tree.S
 		// Map the ordinal position of each table column to the id of the input
 		// column which will be inserted into that position.
 		mb.insertColList[ord] = inCol.id
+
+		// Remember the ordinal position of the scope that will provide any
+		// RETURNING values.
+		mb.returnScopeOrds[ord] = i
 	}
 }
 
@@ -735,6 +740,7 @@ func (mb *mutationBuilder) buildInputForUpsert(
 	mb.fetchColList = make(opt.ColList, mb.tab.DeletableColumnCount())
 	for i := range fetchScope.cols {
 		mb.fetchColList[i] = fetchScope.cols[i].id
+		mb.returnScopeOrds[i] = i
 	}
 
 	// Add the fetch columns to the current scope. It's OK to modify the current
@@ -898,7 +904,6 @@ func (mb *mutationBuilder) projectUpsertColumns() {
 
 	// Project a column for each target table column that needs to be either
 	// inserted or updated. This can include mutation columns.
-	mb.upsertColList = make(opt.ColList, mb.tab.DeletableColumnCount())
 	for i, n := 0, mb.tab.DeletableColumnCount(); i < n; i++ {
 		insertColID := mb.insertColList[i]
 		updateColID := mb.updateColList[i]
@@ -953,12 +958,12 @@ func (mb *mutationBuilder) projectUpsertColumns() {
 
 		// Update the ids for the update columns that are involved in the Upsert.
 		// The new column ids will be used by the Upsert operator in place of the
-		// original column ids. Also set the upsertColList, as those columns can
+		// original column ids. Also set the returnColList, as those columns can
 		// be used by RETURNING columns.
 		if mb.updateColList[i] != 0 {
 			mb.updateColList[i] = scopeCol.id
 		}
-		mb.upsertColList[i] = scopeCol.id
+		mb.returnScopeOrds[i] = len(projectionsScope.cols) - 1
 	}
 
 	mb.b.constructProjectForScope(mb.outScope, projectionsScope)

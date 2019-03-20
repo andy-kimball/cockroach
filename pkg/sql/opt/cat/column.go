@@ -15,6 +15,7 @@
 package cat
 
 import (
+	"github.com/cockroachdb/cockroach/pkg/sql/coltypes"
 	"github.com/cockroachdb/cockroach/pkg/sql/sem/tree"
 	"github.com/cockroachdb/cockroach/pkg/sql/sem/types"
 )
@@ -35,10 +36,15 @@ type Column interface {
 	// DatumType returns the data type of the column.
 	DatumType() types.T
 
-	// ColTypeStr returns the SQL data type of the column, as a string. Note that
-	// this is sometimes different than DatumType().String(), since datum types
-	// are a subset of column types.
-	ColTypeStr() string
+	// ColType returns the full SQL type of the column, which can include
+	// additional information not included in the DatumType, like width and
+	// precision. DatumType -> ColType is always non-lossy, whereas ColType ->
+	// DatumType can discard information about the type.
+	//
+	// WARNING: Due to incomplete functionality in CRDB's type system, this is
+	// currently an expensive method to call. Only use it where slow performance
+	// is acceptable.
+	ColType() coltypes.T
 
 	// IsNullable returns true if the column is nullable.
 	IsNullable() bool

@@ -2991,6 +2991,32 @@ may increase either contention or retry errors, or both.`,
 			Info: "This function is used only by CockroachDB's developers for testing purposes.",
 		},
 	),
+
+	"crdb_internal.limit_value_width": makeBuiltin(
+		tree.FunctionProperties{
+			Category: categorySystemInfo,
+		},
+		tree.Overload{
+			Types: tree.ArgTypes{
+				{"val", types.Decimal},
+				{"precision", types.Int},
+				{"width", types.Int},
+				{"col", types.String},
+				{"typ", types.String},
+			},
+			ReturnType: tree.FixedReturnType(types.Decimal),
+			Fn: func(_ *tree.EvalContext, args tree.Datums) (tree.Datum, error) {
+				return sqlbase.LimitDecimalValueWidth(
+					args[0],
+					int32(tree.MustBeDInt(args[1])),
+					int32(tree.MustBeDInt(args[2])),
+					string(tree.MustBeDString(args[3])),
+					string(tree.MustBeDString(args[4])),
+				)
+			},
+			Info: "This function is used only by CockroachDB's developers for testing purposes.",
+		},
+	),
 }
 
 var lengthImpls = makeBuiltin(tree.FunctionProperties{Category: categoryString},

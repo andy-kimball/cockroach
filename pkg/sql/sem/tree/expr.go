@@ -1593,7 +1593,7 @@ const (
 // AnnotateTypeExpr represents a ANNOTATE_TYPE(expr, type) expression.
 type AnnotateTypeExpr struct {
 	Expr Expr
-	Type coltypes.CastTargetType
+	Type coltypes.T
 
 	SyntaxMode annotateSyntaxMode
 }

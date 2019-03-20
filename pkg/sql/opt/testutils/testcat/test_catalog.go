@@ -721,12 +721,12 @@ func (tc *Column) DatumType() types.T {
 }
 
 // ColTypeStr is part of the cat.Column interface.
-func (tc *Column) ColTypeStr() string {
-	t, err := coltypes.DatumTypeToColumnType(tc.Type)
+func (tc *Column) ColType() coltypes.T {
+	colTyp, err := coltypes.DatumTypeToColumnType(tc.Type)
 	if err != nil {
 		panic(err)
 	}
-	return t.String()
+	return colTyp
 }
 
 // IsHidden is part of the cat.Column interface.
