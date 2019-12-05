@@ -718,6 +718,7 @@ unreserved_keyword ::=
 	| 'LEVEL'
 	| 'LIST'
 	| 'LOCAL'
+	| 'LOCALITY'
 	| 'LOCKED'
 	| 'LOOKUP'
 	| 'LOW'
@@ -780,6 +781,7 @@ unreserved_keyword ::=
 	| 'RENAME'
 	| 'REPEATABLE'
 	| 'REPLACE'
+	| 'REPLICATE'
 	| 'RESET'
 	| 'RESTORE'
 	| 'RESTRICT'
@@ -1019,8 +1021,8 @@ create_index_stmt ::=
 	| 'CREATE' opt_unique 'INVERTED' 'INDEX' 'IF' 'NOT' 'EXISTS' index_name 'ON' table_name '(' index_params ')' opt_storing opt_interleave opt_partition_by
 
 create_table_stmt ::=
-	'CREATE' opt_temp_create_table 'TABLE' table_name '(' opt_table_elem_list ')' opt_interleave opt_partition_by
-	| 'CREATE' opt_temp_create_table 'TABLE' 'IF' 'NOT' 'EXISTS' table_name '(' opt_table_elem_list ')' opt_interleave opt_partition_by
+	'CREATE' opt_temp_create_table 'TABLE' table_name '(' opt_table_elem_list ')' opt_interleave opt_partition_by opt_table_replicate_by
+	| 'CREATE' opt_temp_create_table 'TABLE' 'IF' 'NOT' 'EXISTS' table_name '(' opt_table_elem_list ')' opt_interleave opt_partition_by opt_table_replicate_by
 
 create_table_as_stmt ::=
 	'CREATE' opt_temp_create_table 'TABLE' table_name create_as_opt_col_list 'AS' select_stmt
@@ -1406,6 +1408,10 @@ opt_table_elem_list ::=
 	table_elem_list
 	| 
 
+opt_table_replicate_by ::=
+	'REPLICATE' 'BY' 'LOCALITY'
+	| 
+
 create_as_opt_col_list ::=
 	'(' create_as_table_defs ')'
 	| 
@@ -1764,6 +1770,7 @@ partition_by ::=
 	'PARTITION' 'BY' 'LIST' '(' name_list ')' '(' list_partitions ')'
 	| 'PARTITION' 'BY' 'RANGE' '(' name_list ')' '(' range_partitions ')'
 	| 'PARTITION' 'BY' 'NOTHING'
+	| 'PARTITION' 'BY' 'LOCALITY'
 
 create_as_table_defs ::=
 	( column_name create_as_col_qual_list ) ( ( ',' column_name create_as_col_qual_list | ',' family_def | ',' create_as_constraint_def ) )*

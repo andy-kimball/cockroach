@@ -548,6 +548,7 @@ type IndexTableDef struct {
 	Interleave  *InterleaveDef
 	Inverted    bool
 	PartitionBy *PartitionBy
+	ZoneConfig  *SetZoneConfig
 }
 
 // SetName implements the TableDef interface.
@@ -812,7 +813,7 @@ func (node *InterleaveDef) Format(ctx *FmtCtx) {
 	}
 }
 
-// PartitionByType is an enum of each type of partitioning (LIST/RANGE).
+// PartitionByType is an enum of each type of partitioning (LIST/RANGE/LOCALITY).
 type PartitionByType string
 
 const (
@@ -820,6 +821,8 @@ const (
 	PartitionByList PartitionByType = "LIST"
 	// PartitionByRange indicates a PARTITION BY LIST clause.
 	PartitionByRange PartitionByType = "RANGE"
+	// PartitionByRange indicates a PARTITION BY LOCALITY clause.
+	PartitionByLocality PartitionByType = "LOCALITY"
 )
 
 // PartitionBy represents an PARTITION BY definition within a CREATE/ALTER
@@ -827,8 +830,9 @@ const (
 type PartitionBy struct {
 	Fields NameList
 	// Exactly one of List or Range is required to be non-empty.
-	List  []ListPartition
-	Range []RangePartition
+	List     []ListPartition
+	Range    []RangePartition
+	Locality bool
 }
 
 // Format implements the NodeFormatter interface.
@@ -837,7 +841,9 @@ func (node *PartitionBy) Format(ctx *FmtCtx) {
 		ctx.WriteString(` PARTITION BY NOTHING`)
 		return
 	}
-	if len(node.List) > 0 {
+	if node.Locality {
+		ctx.WriteString(` PARTITION BY LOCALITY`)
+	} else if len(node.List) > 0 {
 		ctx.WriteString(` PARTITION BY LIST (`)
 	} else if len(node.Range) > 0 {
 		ctx.WriteString(` PARTITION BY RANGE (`)
@@ -864,6 +870,7 @@ type ListPartition struct {
 	Name         UnrestrictedName
 	Exprs        Exprs
 	Subpartition *PartitionBy
+	ZoneConfig   *SetZoneConfig
 }
 
 // Format implements the NodeFormatter interface.
@@ -902,11 +909,12 @@ func (node *RangePartition) Format(ctx *FmtCtx) {
 
 // CreateTable represents a CREATE TABLE statement.
 type CreateTable struct {
-	IfNotExists bool
-	Table       TableName
-	Interleave  *InterleaveDef
-	PartitionBy *PartitionBy
-	Temporary   bool
+	IfNotExists  bool
+	IsReplicated bool
+	Table        TableName
+	Interleave   *InterleaveDef
+	PartitionBy  *PartitionBy
+	Temporary    bool
 	// In CREATE...AS queries, Defs represents a list of ColumnTableDefs, one for
 	// each column, and a ConstraintTableDef for each constraint on a subset of
 	// these columns.
@@ -969,6 +977,9 @@ func (node *CreateTable) FormatBody(ctx *FmtCtx) {
 		}
 		if node.PartitionBy != nil {
 			ctx.FormatNode(node.PartitionBy)
+		}
+		if node.IsReplicated {
+			ctx.WriteString(" REPLICATED")
 		}
 	}
 }

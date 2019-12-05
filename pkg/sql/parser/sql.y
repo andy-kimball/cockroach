@@ -541,7 +541,7 @@ func newNameFromStr(s string) *tree.Name {
 %token <str> KEY KEYS KV
 
 %token <str> LANGUAGE LAST LATERAL LC_CTYPE LC_COLLATE
-%token <str> LEADING LEASE LEAST LEFT LESS LEVEL LIKE LIMIT LIST LOCAL
+%token <str> LEADING LEASE LEAST LEFT LESS LEVEL LIKE LIMIT LIST LOCAL LOCALITY
 %token <str> LOCALTIME LOCALTIMESTAMP LOCKED LOOKUP LOW LSHIFT
 
 %token <str> MATCH MATERIALIZED MERGE MINVALUE MAXVALUE MINUTE MONTH
@@ -560,7 +560,7 @@ func newNameFromStr(s string) *tree.Name {
 
 %token <str> RANGE RANGES READ REAL RECURSIVE REF REFERENCES
 %token <str> REGCLASS REGPROC REGPROCEDURE REGNAMESPACE REGTYPE
-%token <str> REMOVE_PATH RENAME REPEATABLE REPLACE
+%token <str> REMOVE_PATH RENAME REPEATABLE REPLACE REPLICATE
 %token <str> RELEASE RESET RESTORE RESTRICT RESUME RETURNING REVOKE RIGHT
 %token <str> ROLE ROLES ROLLBACK ROLLUP ROW ROWS RSHIFT RULE
 
@@ -803,6 +803,8 @@ func newNameFromStr(s string) *tree.Name {
 
 %type <tree.DropBehavior> opt_drop_behavior
 %type <tree.DropBehavior> opt_interleave_drop_behavior
+
+%type <bool> opt_table_replicate_by
 
 %type <tree.ValidationBehavior> opt_validate_behavior
 
@@ -4215,12 +4217,13 @@ pause_stmt:
 // WEBDOCS/create-table.html
 // WEBDOCS/create-table-as.html
 create_table_stmt:
-  CREATE opt_temp_create_table TABLE table_name '(' opt_table_elem_list ')' opt_interleave opt_partition_by opt_table_with
+  CREATE opt_temp_create_table TABLE table_name '(' opt_table_elem_list ')' opt_interleave opt_partition_by opt_table_with opt_table_replicate_by
   {
     name := $4.unresolvedObjectName().ToTableName()
     $$.val = &tree.CreateTable{
       Table: name,
       IfNotExists: false,
+      IsReplicated: $11.bool(),
       Interleave: $8.interleave(),
       Defs: $6.tblDefs(),
       AsSource: nil,
@@ -4228,12 +4231,13 @@ create_table_stmt:
       Temporary: $2.persistenceType(),
     }
   }
-| CREATE opt_temp_create_table TABLE IF NOT EXISTS table_name '(' opt_table_elem_list ')' opt_interleave opt_partition_by opt_table_with
+| CREATE opt_temp_create_table TABLE IF NOT EXISTS table_name '(' opt_table_elem_list ')' opt_interleave opt_partition_by opt_table_with opt_table_replicate_by
   {
     name := $7.unresolvedObjectName().ToTableName()
     $$.val = &tree.CreateTable{
       Table: name,
       IfNotExists: true,
+      IsReplicated: $14.bool(),
       Interleave: $11.interleave(),
       Defs: $9.tblDefs(),
       AsSource: nil,
@@ -4241,6 +4245,10 @@ create_table_stmt:
       Temporary: $2.persistenceType(),
     }
   }
+
+opt_table_replicate_by:
+  REPLICATE BY LOCALITY  { $$.val = true }
+|   { $$.val = false }
 
 opt_table_with:
   /* EMPTY */     { /* no error */ }
@@ -4404,6 +4412,13 @@ partition_by:
 | PARTITION BY NOTHING
   {
     $$.val = (*tree.PartitionBy)(nil)
+  }
+| PARTITION BY LOCALITY
+  {
+    $$.val = &tree.PartitionBy{
+      Fields: tree.NameList{"region"},
+      Locality: true,
+    }
   }
 
 list_partitions:
@@ -9463,6 +9478,7 @@ unreserved_keyword:
 | LEVEL
 | LIST
 | LOCAL
+| LOCALITY
 | LOCKED
 | LOOKUP
 | LOW
@@ -9525,6 +9541,7 @@ unreserved_keyword:
 | RENAME
 | REPEATABLE
 | REPLACE
+| REPLICATE
 | RESET
 | RESTORE
 | RESTRICT

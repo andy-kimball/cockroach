@@ -1,7 +1,9 @@
 create_table_stmt ::=
-	'CREATE' opt_temp_create_table 'TABLE' table_name '(' table_definition ')'  'PARTITION' 'BY' 'LIST' '(' name_list ')' '(' list_partitions ')'
-	| 'CREATE' opt_temp_create_table 'TABLE' table_name '(' table_definition ')'  'PARTITION' 'BY' 'RANGE' '(' name_list ')' '(' range_partitions ')'
-	| 'CREATE' opt_temp_create_table 'TABLE' table_name '(' table_definition ')'  'PARTITION' 'BY' 'NOTHING'
-	| 'CREATE' opt_temp_create_table 'TABLE' 'IF' 'NOT' 'EXISTS' table_name '(' table_definition ')'  'PARTITION' 'BY' 'LIST' '(' name_list ')' '(' list_partitions ')'
-	| 'CREATE' opt_temp_create_table 'TABLE' 'IF' 'NOT' 'EXISTS' table_name '(' table_definition ')'  'PARTITION' 'BY' 'RANGE' '(' name_list ')' '(' range_partitions ')'
-	| 'CREATE' opt_temp_create_table 'TABLE' 'IF' 'NOT' 'EXISTS' table_name '(' table_definition ')'  'PARTITION' 'BY' 'NOTHING'
+	'CREATE' opt_temp_create_table 'TABLE' table_name '(' table_definition ')'  'PARTITION' 'BY' 'LIST' '(' name_list ')' '(' list_partitions ')' opt_table_replicate_by
+	| 'CREATE' opt_temp_create_table 'TABLE' table_name '(' table_definition ')'  'PARTITION' 'BY' 'RANGE' '(' name_list ')' '(' range_partitions ')' opt_table_replicate_by
+	| 'CREATE' opt_temp_create_table 'TABLE' table_name '(' table_definition ')'  'PARTITION' 'BY' 'NOTHING' opt_table_replicate_by
+	| 'CREATE' opt_temp_create_table 'TABLE' table_name '(' table_definition ')'  'PARTITION' 'BY' 'LOCALITY' opt_table_replicate_by
+	| 'CREATE' opt_temp_create_table 'TABLE' 'IF' 'NOT' 'EXISTS' table_name '(' table_definition ')'  'PARTITION' 'BY' 'LIST' '(' name_list ')' '(' list_partitions ')' opt_table_replicate_by
+	| 'CREATE' opt_temp_create_table 'TABLE' 'IF' 'NOT' 'EXISTS' table_name '(' table_definition ')'  'PARTITION' 'BY' 'RANGE' '(' name_list ')' '(' range_partitions ')' opt_table_replicate_by
+	| 'CREATE' opt_temp_create_table 'TABLE' 'IF' 'NOT' 'EXISTS' table_name '(' table_definition ')'  'PARTITION' 'BY' 'NOTHING' opt_table_replicate_by
+	| 'CREATE' opt_temp_create_table 'TABLE' 'IF' 'NOT' 'EXISTS' table_name '(' table_definition ')'  'PARTITION' 'BY' 'LOCALITY' opt_table_replicate_by

@@ -294,6 +294,57 @@ func (n *createTableNode) startExec(params runParams) error {
 		}
 	}
 
+	if n.n.PartitionBy != nil && n.n.PartitionBy.Locality {
+		for _, def := range n.n.Defs {
+			var partition *tree.PartitionBy
+			switch t := def.(type) {
+			case *tree.UniqueConstraintTableDef:
+				partition = t.PartitionBy
+			case *tree.IndexTableDef:
+				partition = t.PartitionBy
+			default:
+				continue
+			}
+
+			for i := range partition.List {
+				plan, err := params.p.SetZoneConfig(params.ctx, partition.List[i].ZoneConfig)
+				if err != nil {
+					return err
+				}
+
+				err = plan.startExec(params)
+				if err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	if n.n.IsReplicated {
+		for _, def := range n.n.Defs {
+			var plan planNode
+			var err error
+			switch t := def.(type) {
+			case *tree.UniqueConstraintTableDef:
+				plan, err = params.p.SetZoneConfig(params.ctx, t.ZoneConfig)
+
+			case *tree.IndexTableDef:
+				plan, err = params.p.SetZoneConfig(params.ctx, t.ZoneConfig)
+
+			default:
+				continue
+			}
+			if err != nil {
+				return err
+			}
+
+			err = plan.startExec(params)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
 	// The CREATE STATISTICS run for an async CTAS query is initiated by the
 	// SchemaChanger.
 	if n.n.As() && params.p.autoCommit {
