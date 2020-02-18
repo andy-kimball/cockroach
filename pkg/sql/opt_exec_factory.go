@@ -1391,6 +1391,8 @@ func (ef *execFactory) ConstructUpdate(
 	// the updater derives the columns that need to be fetched. By contrast, the
 	// CBO will have already determined the set of fetch and update columns, and
 	// passes those sets into the updater (which will basically be a no-op).
+	// Set errorOnDup to false, since the UPDATE statement ensures that there
+	// will be no duplicate input rows.
 	ru, err := row.MakeUpdater(
 		ctx,
 		ef.planner.txn,
@@ -1399,6 +1401,7 @@ func (ef *execFactory) ConstructUpdate(
 		updateColDescs,
 		fetchColDescs,
 		row.UpdaterDefault,
+		false, /* errorOnDup */
 		checkFKs,
 		ef.planner.EvalContext(),
 		&ef.planner.alloc,
@@ -1546,7 +1549,8 @@ func (ef *execFactory) ConstructUpsert(
 	// In the HP, the updater derives the columns that need to be fetched. By
 	// contrast, the CBO will have already determined the set of fetch and update
 	// columns, and passes those sets into the updater (which will basically be a
-	// no-op).
+	// no-op). Set errorOnDup to true, so that the updater will prevent the same
+	// row from being updated multiple times.
 	ru, err := row.MakeUpdater(
 		ctx,
 		ef.planner.txn,
@@ -1555,6 +1559,7 @@ func (ef *execFactory) ConstructUpsert(
 		updateColDescs,
 		fetchColDescs,
 		row.UpdaterDefault,
+		true, /* errorOnDup */
 		// TODO(justin): make this conditional on skipFKChecks once we emit the update checks.
 		row.CheckFKs,
 		ef.planner.EvalContext(),
@@ -1661,12 +1666,15 @@ func (ef *execFactory) ConstructDelete(
 	// the deleter derives the columns that need to be fetched. By contrast, the
 	// CBO will have already determined the set of fetch columns, and passes
 	// those sets into the deleter (which will basically be a no-op).
+	// Set errorOnDup to false, since the DELETE statement ensures that there
+	// will be no duplicate input rows.
 	rd, err := row.MakeDeleter(
 		ctx,
 		ef.planner.txn,
 		tabDesc,
 		fkTables,
 		fetchColDescs,
+		false, /* errorOnDup */
 		checkFKs,
 		ef.planner.EvalContext(),
 		&ef.planner.alloc,

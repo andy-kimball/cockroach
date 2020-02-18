@@ -27,7 +27,14 @@ type Deleter struct {
 	FetchCols            []sqlbase.ColumnDescriptor
 	FetchColIDtoRowIndex map[sqlbase.ColumnID]int
 	Fks                  fkExistenceCheckForDelete
-	cascader             *cascader
+
+	// errorOnDup makes it an error to attempt to delete the same row twice.
+	// The Deleter will use CPut to ensure that a row is deleted only if it
+	// exists and its value has not been changed from its starting value (which
+	// would indicate a previous operation in the same statement modified it).
+	errorOnDup bool
+
+	cascader *cascader
 	// For allocation avoidance.
 	key roachpb.Key
 }
@@ -37,18 +44,22 @@ type Deleter struct {
 // The returned Deleter contains a FetchCols field that defines the
 // expectation of which values are passed as values to DeleteRow. Any column
 // passed in requestedCols will be included in FetchCols.
+//
+// See comment on Deleter.errorOnDup field for more information on errorOnDup
+// parameter.
 func MakeDeleter(
 	ctx context.Context,
 	txn *client.Txn,
 	tableDesc *sqlbase.ImmutableTableDescriptor,
 	fkTables FkTableMetadata,
 	requestedCols []sqlbase.ColumnDescriptor,
+	errorOnDup bool,
 	checkFKs checkFKConstraints,
 	evalCtx *tree.EvalContext,
 	alloc *sqlbase.DatumAlloc,
 ) (Deleter, error) {
 	rowDeleter, err := makeRowDeleterWithoutCascader(
-		ctx, txn, tableDesc, fkTables, requestedCols, checkFKs, alloc,
+		ctx, txn, tableDesc, fkTables, requestedCols, errorOnDup, checkFKs, alloc,
 	)
 	if err != nil {
 		return Deleter{}, err
@@ -71,6 +82,7 @@ func makeRowDeleterWithoutCascader(
 	tableDesc *sqlbase.ImmutableTableDescriptor,
 	fkTables FkTableMetadata,
 	requestedCols []sqlbase.ColumnDescriptor,
+	errorOnDup bool,
 	checkFKs checkFKConstraints,
 	alloc *sqlbase.DatumAlloc,
 ) (Deleter, error) {
@@ -113,6 +125,7 @@ func makeRowDeleterWithoutCascader(
 		Helper:               newRowHelper(tableDesc, indexes),
 		FetchCols:            fetchCols,
 		FetchColIDtoRowIndex: fetchColIDtoRowIndex,
+		errorOnDup:           errorOnDup,
 	}
 	if checkFKs == CheckFKs {
 		var err error
@@ -136,11 +149,12 @@ func (rd *Deleter) DeleteRow(
 	checkFKs checkFKConstraints,
 	traceKV bool,
 ) error {
+	tableDesc := rd.Helper.TableDesc
 
 	// Delete the row from any secondary indices.
 	for i := range rd.Helper.Indexes {
 		entries, err := sqlbase.EncodeSecondaryIndex(
-			rd.Helper.TableDesc.TableDesc(), &rd.Helper.Indexes[i], rd.FetchColIDtoRowIndex, values)
+			tableDesc.TableDesc(), &rd.Helper.Indexes[i], rd.FetchColIDtoRowIndex, values)
 		if err != nil {
 			return err
 		}
@@ -148,36 +162,65 @@ func (rd *Deleter) DeleteRow(
 			if traceKV {
 				log.VEventf(ctx, 2, "Del %s", keys.PrettyPrint(rd.Helper.secIndexValDirs[i], e.Key))
 			}
-			b.Del(&e.Key)
+
+			// If errorOnDup is set, then only delete if the row exists and has the
+			// expected value.
+			if rd.errorOnDup {
+				// CPut with value = nil will delete the row.
+				b.CPut(&e.Key, nil, &e.Value)
+			} else {
+				b.Del(&e.Key)
+			}
 		}
 	}
 
-	primaryIndexKey, err := rd.Helper.encodePrimaryIndex(rd.FetchColIDtoRowIndex, values)
-	if err != nil {
-		return err
-	}
+	// If errorOnDup is set, then only delete if the row exists and has the
+	// expected value.
+	if rd.errorOnDup {
+		// Need to get the encoded key and values of one or more KV rows that make
+		// up the primary index row. There can be multiple KV rows in the case
+		// where there are multiple column families.
+		entries, err := sqlbase.EncodePrimaryIndex(
+			tableDesc.TableDesc(), &tableDesc.PrimaryIndex, rd.FetchColIDtoRowIndex, values)
+		if err != nil {
+			return err
+		}
 
-	// Delete the row.
-	for i := range rd.Helper.TableDesc.Families {
-		if i > 0 {
-			// HACK: MakeFamilyKey appends to its argument, so on every loop iteration
-			// after the first, trim primaryIndexKey so nothing gets overwritten.
-			// TODO(dan): Instead of this, use something like engine.ChunkAllocator.
-			primaryIndexKey = primaryIndexKey[:len(primaryIndexKey):len(primaryIndexKey)]
+		for _, e := range entries {
+			if traceKV {
+				log.VEventf(ctx, 2, "Del %s", keys.PrettyPrint(rd.Helper.primIndexValDirs, e.Key))
+			}
+			b.CPut(&e.Key, nil, &e.Value)
 		}
-		familyID := rd.Helper.TableDesc.Families[i].ID
-		rd.key = keys.MakeFamilyKey(primaryIndexKey, uint32(familyID))
-		if traceKV {
-			log.VEventf(ctx, 2, "Del %s", keys.PrettyPrint(rd.Helper.primIndexValDirs, rd.key))
+	} else {
+		// No need to encode values for Del; just need the key.
+		primaryIndexKey, err := rd.Helper.encodePrimaryIndex(rd.FetchColIDtoRowIndex, values)
+		if err != nil {
+			return err
 		}
-		b.Del(&rd.key)
-		rd.key = nil
+
+		// Delete the row.
+		for i := range tableDesc.Families {
+			if i > 0 {
+				// HACK: MakeFamilyKey appends to its argument, so on every loop iteration
+				// after the first, trim primaryIndexKey so nothing gets overwritten.
+				// TODO(dan): Instead of this, use something like engine.ChunkAllocator.
+				primaryIndexKey = primaryIndexKey[:len(primaryIndexKey):len(primaryIndexKey)]
+			}
+			familyID := tableDesc.Families[i].ID
+			rd.key = keys.MakeFamilyKey(primaryIndexKey, uint32(familyID))
+			if traceKV {
+				log.VEventf(ctx, 2, "Del %s", keys.PrettyPrint(rd.Helper.primIndexValDirs, rd.key))
+			}
+			b.Del(&rd.key)
+			rd.key = nil
+		}
 	}
 
 	if rd.cascader != nil {
 		if err := rd.cascader.cascadeAll(
 			ctx,
-			rd.Helper.TableDesc,
+			tableDesc,
 			tree.Datums(values),
 			nil, /* updatedValues */
 			rd.FetchColIDtoRowIndex,

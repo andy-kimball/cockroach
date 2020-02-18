@@ -457,7 +457,8 @@ func (c *cascader) addRowDeleter(
 		c.txn,
 		table,
 		c.fkTables,
-		nil, /* requestedCol */
+		nil,   /* requestedCol */
+		false, /* errorOnDup */
 		CheckFKs,
 		c.alloc,
 	)
@@ -524,6 +525,7 @@ func (c *cascader) addRowUpdater(
 		table.Columns,
 		nil, /* requestedCol */
 		UpdaterDefault,
+		false, /* errorOnDup */
 		CheckFKs,
 		c.alloc,
 	)

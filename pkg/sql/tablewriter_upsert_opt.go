@@ -180,6 +180,7 @@ func (tu *optTableUpserter) init(
 		tu.updateCols,
 		tu.fetchCols,
 		row.UpdaterDefault,
+		true, /* errorOnDup */
 		row.CheckFKs,
 		evalCtx,
 		tu.alloc,

@@ -31,7 +31,19 @@ type Updater struct {
 	FetchColIDtoRowIndex  map[sqlbase.ColumnID]int
 	UpdateCols            []sqlbase.ColumnDescriptor
 	UpdateColIDtoRowIndex map[sqlbase.ColumnID]int
-	primaryKeyColChange   bool
+
+	// errorOnDup makes it an error to attempt to update the same row twice.
+	// The Updater will use CPut to ensure that a row is updated only if it
+	// exists and its value has not been changed from its starting value (which
+	// would indicate a previous operation in the same statement modified it).
+	// TODO(andyk): This does not error when non-key columns of the primary index
+	// are changed twice. The current code makes handling that case complex and
+	// scary to backport. And since that case does not cause index corruption as
+	// in issue #44466, for now we just retain "silent overwrite" behavior rather
+	// than raise an error.
+	errorOnDup bool
+
+	primaryKeyColChange bool
 
 	// rd and ri are used when the update this Updater is created for modifies
 	// the primary key of the table. In that case, rows must be deleted and
@@ -71,6 +83,9 @@ const (
 // The returned Updater contains a FetchCols field that defines the
 // expectation of which values are passed as oldValues to UpdateRow. All the columns
 // passed in requestedCols will be included in FetchCols at the beginning.
+//
+// See comment on Updater.errorOnDup field for more information on errorOnDup
+// parameter.
 func MakeUpdater(
 	ctx context.Context,
 	txn *client.Txn,
@@ -79,12 +94,14 @@ func MakeUpdater(
 	updateCols []sqlbase.ColumnDescriptor,
 	requestedCols []sqlbase.ColumnDescriptor,
 	updateType rowUpdaterType,
+	errorOnDup bool,
 	checkFKs checkFKConstraints,
 	evalCtx *tree.EvalContext,
 	alloc *sqlbase.DatumAlloc,
 ) (Updater, error) {
 	rowUpdater, err := makeUpdaterWithoutCascader(
-		ctx, txn, tableDesc, fkTables, updateCols, requestedCols, updateType, checkFKs, alloc,
+		ctx, txn, tableDesc, fkTables, updateCols, requestedCols,
+		updateType, errorOnDup, checkFKs, alloc,
 	)
 	if err != nil {
 		return Updater{}, err
@@ -116,6 +133,7 @@ func makeUpdaterWithoutCascader(
 	updateCols []sqlbase.ColumnDescriptor,
 	requestedCols []sqlbase.ColumnDescriptor,
 	updateType rowUpdaterType,
+	errorOnDup bool,
 	checkFKs checkFKConstraints,
 	alloc *sqlbase.DatumAlloc,
 ) (Updater, error) {
@@ -189,6 +207,7 @@ func makeUpdaterWithoutCascader(
 		marshaled:             make([]roachpb.Value, len(updateCols)),
 		oldIndexEntries:       make([][]sqlbase.IndexEntry, len(includeIndexes)),
 		newIndexEntries:       make([][]sqlbase.IndexEntry, len(includeIndexes)),
+		errorOnDup:            errorOnDup,
 	}
 
 	if primaryKeyColChange {
@@ -197,7 +216,7 @@ func makeUpdaterWithoutCascader(
 		// them, so request them all.
 		var err error
 		if ru.rd, err = makeRowDeleterWithoutCascader(
-			ctx, txn, tableDesc, fkTables, tableCols, SkipFKs, alloc,
+			ctx, txn, tableDesc, fkTables, tableCols, errorOnDup, SkipFKs, alloc,
 		); err != nil {
 			return Updater{}, err
 		}
@@ -302,6 +321,8 @@ func (ru *Updater) UpdateRow(
 	checkFKs checkFKConstraints,
 	traceKV bool,
 ) ([]tree.Datum, error) {
+	tableDesc := ru.Helper.TableDesc
+
 	if ru.cascader != nil {
 		batch = ru.cascader.txn.NewBatch()
 	}
@@ -355,12 +376,12 @@ func (ru *Updater) UpdateRow(
 		// TODO (rohany): include a version of sqlbase.EncodeSecondaryIndex that allocates index entries
 		//  into an argument list.
 		ru.oldIndexEntries[i], err = sqlbase.EncodeSecondaryIndex(
-			ru.Helper.TableDesc.TableDesc(), &ru.Helper.Indexes[i], ru.FetchColIDtoRowIndex, oldValues)
+			tableDesc.TableDesc(), &ru.Helper.Indexes[i], ru.FetchColIDtoRowIndex, oldValues)
 		if err != nil {
 			return nil, err
 		}
 		ru.newIndexEntries[i], err = sqlbase.EncodeSecondaryIndex(
-			ru.Helper.TableDesc.TableDesc(), &ru.Helper.Indexes[i], ru.FetchColIDtoRowIndex, ru.newValues)
+			tableDesc.TableDesc(), &ru.Helper.Indexes[i], ru.FetchColIDtoRowIndex, ru.newValues)
 		if err != nil {
 			return nil, err
 		}
@@ -371,13 +392,13 @@ func (ru *Updater) UpdateRow(
 			return nil, err
 		}
 		if err := ru.ri.InsertRow(
-			ctx, batch, ru.newValues, false /* ignoreConflicts */, SkipFKs, traceKV,
+			ctx, batch, ru.newValues, false /* overwrite */, SkipFKs, traceKV,
 		); err != nil {
 			return nil, err
 		}
 
 		if ru.Fks.checker != nil {
-			ru.Fks.addCheckForIndex(ru.Helper.TableDesc.PrimaryIndex.ID, ru.Helper.TableDesc.PrimaryIndex.Type)
+			ru.Fks.addCheckForIndex(tableDesc.PrimaryIndex.ID, tableDesc.PrimaryIndex.Type)
 			for i := range ru.Helper.Indexes {
 				// * We always will have at least 1 entry in the index, so indexing 0 is safe.
 				// * The only difference between column family 0 vs other families encodings is
@@ -390,11 +411,11 @@ func (ru *Updater) UpdateRow(
 
 			if ru.cascader != nil {
 				if err := ru.cascader.txn.Run(ctx, batch); err != nil {
-					return nil, ConvertBatchError(ctx, ru.Helper.TableDesc, batch)
+					return nil, ConvertBatchError(ctx, tableDesc, batch)
 				}
 				if err := ru.cascader.cascadeAll(
 					ctx,
-					ru.Helper.TableDesc,
+					tableDesc,
 					tree.Datums(oldValues),
 					tree.Datums(ru.newValues),
 					ru.FetchColIDtoRowIndex,
@@ -449,7 +470,14 @@ func (ru *Updater) UpdateRow(
 					if traceKV {
 						log.VEventf(ctx, 2, "Del %s", keys.PrettyPrint(ru.Helper.secIndexValDirs[i], oldEntry.Key))
 					}
-					batch.Del(oldEntry.Key)
+
+					// If errorOnDup is true, then ensure that any attempt to delete
+					// the same row twice fails.
+					if ru.errorOnDup {
+						batch.CPut(oldEntry.Key, nil, &oldEntry.Value)
+					} else {
+						batch.Del(oldEntry.Key)
+					}
 				} else if !newEntry.Value.EqualData(oldEntry.Value) {
 					expValue = &oldEntry.Value
 				} else {
@@ -459,12 +487,12 @@ func (ru *Updater) UpdateRow(
 					k := keys.PrettyPrint(ru.Helper.secIndexValDirs[i], newEntry.Key)
 					v := newEntry.Value.PrettyPrint()
 					if expValue != nil {
-						log.VEventf(ctx, 2, "CPut %s -> %v (replacing %v, if exists)", k, v, expValue)
+						log.VEventf(ctx, 2, "CPut %s -> %v (replacing %v)", k, v, expValue)
 					} else {
 						log.VEventf(ctx, 2, "CPut %s -> %v (expecting does not exist)", k, v)
 					}
 				}
-				batch.CPutAllowingIfNotExists(newEntry.Key, &newEntry.Value, expValue)
+				batch.CPut(newEntry.Key, &newEntry.Value, expValue)
 			}
 		} else {
 			// Remove all inverted index entries, and re-add them.
@@ -472,7 +500,15 @@ func (ru *Updater) UpdateRow(
 				if traceKV {
 					log.VEventf(ctx, 2, "Del %s", ru.oldIndexEntries[i][j].Key)
 				}
-				batch.Del(ru.oldIndexEntries[i][j].Key)
+
+				// If errorOnDup is true, then ensure that any attempt to delete
+				// the same row twice fails.
+				key := ru.oldIndexEntries[i][j].Key
+				if ru.errorOnDup {
+					batch.CPut(key, nil, &ru.oldIndexEntries[i][j].Value)
+				} else {
+					batch.Del(key)
+				}
 			}
 			putFn := insertInvertedPutFn
 			// We're adding all of the inverted index entries from the row being updated.
@@ -482,8 +518,8 @@ func (ru *Updater) UpdateRow(
 		}
 	}
 
-	// We're deleting indexes in a delete only state. We're bounding this by the number of indexes because inverted
-	// indexed will be handled separately.
+	// We're deleting indexes in a delete only state. We're bounding this by the number of indexes
+	// because inverted indexed will be handled separately.
 	if ru.DeleteHelper != nil {
 		for _, deletedSecondaryIndexEntry := range deleteOldSecondaryIndexEntries {
 			if traceKV {
@@ -495,11 +531,11 @@ func (ru *Updater) UpdateRow(
 
 	if ru.cascader != nil {
 		if err := ru.cascader.txn.Run(ctx, batch); err != nil {
-			return nil, ConvertBatchError(ctx, ru.Helper.TableDesc, batch)
+			return nil, ConvertBatchError(ctx, tableDesc, batch)
 		}
 		if err := ru.cascader.cascadeAll(
 			ctx,
-			ru.Helper.TableDesc,
+			tableDesc,
 			tree.Datums(oldValues),
 			tree.Datums(ru.newValues),
 			ru.FetchColIDtoRowIndex,

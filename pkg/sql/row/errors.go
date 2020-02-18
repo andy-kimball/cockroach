@@ -59,8 +59,20 @@ func ConvertBatchError(
 	}
 	result := b.Results[j]
 	if cErr, ok := origPErr.GetDetail().(*roachpb.ConditionFailedError); ok && len(result.Rows) > 0 {
-		key := result.Rows[0].Key
-		return NewUniquenessConstraintViolationError(ctx, tableDesc, key, cErr.ActualValue)
+		// Conflicts can be triggered by two different situations:
+		// 1. The same row is deleted or updated twice by the same statement. PG
+		//    raises an error in this case. CRDB uses CPut operations with an
+		//    expected value = original value to detect multiple changes.
+		// 2. The inserted or updated row violates a UNIQUE constraint.
+		cput, ok := b.RawRequests()[j].Value.(*roachpb.RequestUnion_ConditionalPut)
+		if ok && cput.ConditionalPut.ExpValue != nil {
+			err := pgerror.Newf(pgcode.CardinalityViolation,
+				"UPSERT or INSERT...ON CONFLICT command cannot affect row a second time")
+			return errors.WithHint(err, "Ensure that no rows proposed for insertion within the same command have duplicate constrained values.")
+		} else {
+			key := result.Rows[0].Key
+			return NewUniquenessConstraintViolationError(ctx, tableDesc, key, cErr.ActualValue)
+		}
 	}
 	return origPErr.GoError()
 }

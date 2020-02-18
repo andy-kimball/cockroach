@@ -984,3 +984,203 @@ query III
 SELECT * from table38627
 ----
 1  1  5
+
+# ------------------------------------------------------------------------------
+# Regression for #44466.
+# ------------------------------------------------------------------------------
+statement ok
+CREATE TABLE t44466 (c0 INT PRIMARY KEY, c1 BOOL, c2 INT UNIQUE)
+
+statement ok
+INSERT INTO t44466 (c0) VALUES (0)
+
+statement error pq: UPSERT or INSERT...ON CONFLICT command cannot affect row a second time
+UPSERT INTO t44466 (c2, c0) VALUES (0, 0), (1, 0)
+
+statement ok
+DROP TABLE t44466
+
+# ------------------------------------------------------------------------------
+# Attempt to update primary key twice, with no secondary index present.
+# ------------------------------------------------------------------------------
+statement ok
+CREATE TABLE tdup (x int primary key, y int, z int)
+
+statement ok
+INSERT INTO tdup VALUES (1, 1, 1)
+
+statement error pq: UPSERT or INSERT...ON CONFLICT command cannot affect row a second time
+INSERT INTO tdup VALUES (1, 2, 1), (1, 3, 1) ON CONFLICT (x) DO UPDATE SET x=excluded.y
+
+# Add secondary index and verify that same error occurs.
+statement ok
+CREATE INDEX ON tdup (y)
+
+statement error pq: UPSERT or INSERT...ON CONFLICT command cannot affect row a second time
+INSERT INTO tdup VALUES (1, 2, 1), (1, 3, 1) ON CONFLICT (x) DO UPDATE SET x=excluded.y
+
+statement ok
+DROP TABLE tdup
+
+# ------------------------------------------------------------------------------
+# Attempt to update secondary index key twice.
+# ------------------------------------------------------------------------------
+statement ok
+CREATE TABLE tdup (x int primary key, y int, z int, INDEX (y))
+
+statement ok
+INSERT INTO tdup VALUES (1, 1, 1)
+
+statement error pq: UPSERT or INSERT...ON CONFLICT command cannot affect row a second time
+INSERT INTO tdup VALUES (1, 2, 1), (1, 3, 1) ON CONFLICT (x) DO UPDATE SET y=excluded.y
+
+statement ok
+DROP TABLE tdup
+
+# ------------------------------------------------------------------------------
+# Attempt to update non-key columns.
+# ------------------------------------------------------------------------------
+statement ok
+CREATE TABLE tdup (x int primary key, y int, z int)
+
+statement ok
+INSERT INTO tdup VALUES (1, 1, 1)
+
+# Modifying non-key columns in primary index does not trigger error.
+# TODO(andyk): In future, we should make this an error to mimic PG behavior.
+statement ok
+INSERT INTO tdup VALUES (1, 1, 2), (1, 1, 3) ON CONFLICT (x) DO UPDATE SET z=excluded.z
+
+query III
+SELECT * from tdup
+----
+1  1  3
+
+# Add secondary index.
+statement ok
+CREATE INDEX secondary ON tdup (y)
+
+statement ok
+INSERT INTO tdup VALUES (1, 1, 4), (1, 1, 5) ON CONFLICT (x) DO UPDATE SET z=excluded.z
+
+query III
+SELECT * from tdup
+----
+1  1  5
+
+query III
+SELECT * from tdup@secondary
+----
+1  1  5
+
+statement ok
+DROP INDEX secondary
+
+# Add secondary index with STORING clause.
+statement ok
+CREATE INDEX secondary ON tdup (y) STORING (z)
+
+statement error pq: UPSERT or INSERT...ON CONFLICT command cannot affect row a second time
+INSERT INTO tdup VALUES (1, 1, 6), (1, 1, 7) ON CONFLICT (x) DO UPDATE SET z=excluded.z
+
+query III
+SELECT * from tdup
+----
+1  1  5
+
+query III
+SELECT * from tdup@secondary
+----
+1  1  5
+
+statement ok
+DROP TABLE tdup
+
+# ------------------------------------------------------------------------------
+# Attempt to update non-key columns when family != 0.
+# ------------------------------------------------------------------------------
+
+# No secondary index.
+statement ok
+CREATE TABLE tdup (x INT PRIMARY KEY, y INT, y2 INT, y3 INT, FAMILY (x), FAMILY (y, y2), FAMILY (y3))
+
+statement ok
+INSERT INTO tdup VALUES (1, NULL, NULL, NULL)
+
+statement ok
+INSERT INTO tdup (x, y) VALUES (1, 2), (1, 3) ON CONFLICT (x) DO UPDATE SET y2=excluded.y, y3=excluded.y
+
+query IIII
+SELECT * from tdup
+----
+1  NULL  3  3
+
+# Add secondary index.
+statement ok
+CREATE INDEX secondary ON tdup (y)
+
+statement ok
+INSERT INTO tdup (x, y) VALUES (1, 4), (1, NULL) ON CONFLICT (x) DO UPDATE SET y2=excluded.y, y3=excluded.y
+
+query IIII
+SELECT * from tdup
+----
+1  NULL  NULL  NULL
+
+query IIII
+SELECT * from tdup@secondary
+----
+1  NULL  NULL  NULL
+
+# Add secondary index with STORING column.
+statement ok
+DROP INDEX secondary
+
+statement ok
+CREATE INDEX secondary ON tdup (y) STORING (y2)
+
+statement error pq: UPSERT or INSERT...ON CONFLICT command cannot affect row a second time
+INSERT INTO tdup (x, y) VALUES (1, 5), (1, 6) ON CONFLICT (x) DO UPDATE SET y2=excluded.y, y3=excluded.y
+
+statement ok
+DROP TABLE tdup
+
+# ------------------------------------------------------------------------------
+# Attempt to update inverted index.
+# ------------------------------------------------------------------------------
+
+# No secondary index.
+statement ok
+CREATE TABLE tdup (k INT PRIMARY KEY, j JSON, INVERTED INDEX (j))
+
+statement ok
+INSERT INTO tdup VALUES (1, '{"a": 1, "b": 2}')
+
+statement error pq: UPSERT or INSERT...ON CONFLICT command cannot affect row a second time
+INSERT INTO tdup
+VALUES (1, '{"a": 3, "c": 4}'), (1, '{"a": 5, "c": 6}')
+ON CONFLICT (k) DO UPDATE SET j=excluded.j
+
+statement ok
+DROP TABLE tdup
+
+# ------------------------------------------------------------------------------
+# Update primary key when write-only index is present.
+# ------------------------------------------------------------------------------
+statement ok
+SET experimental_enable_primary_key_changes = true
+
+statement ok
+CREATE TABLE tdup (x INT PRIMARY KEY, y INT NOT NULL, z INT NOT NULL)
+
+statement ok
+INSERT INTO tdup VALUES (1, 1, 1)
+
+statement ok
+ALTER TABLE tdup ALTER PRIMARY KEY USING COLUMNS (y, z)
+
+statement error pq: UPSERT or INSERT...ON CONFLICT command cannot affect row a second time
+INSERT INTO tdup VALUES (1, 1, 2), (1, 1, 3) ON CONFLICT (x) DO UPDATE SET z=excluded.z
+
+statement ok
+DROP TABLE tdup

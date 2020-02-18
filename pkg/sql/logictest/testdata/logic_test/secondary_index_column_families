@@ -289,4 +289,4 @@ SELECT message FROM [SHOW KV TRACE FOR SESSION] WHERE
 message LIKE 'CPut /Table/55/2%'
 ORDER BY message
 ----
-CPut /Table/55/2/1/1/1 -> /TUPLE/2:2:Int/5 (replacing raw_bytes:"\000\000\000\000\n#\004" timestamp:<> , if exists)
+CPut /Table/55/2/1/1/1 -> /TUPLE/2:2:Int/5 (replacing raw_bytes:"\000\000\000\000\n#\004" timestamp:<> )

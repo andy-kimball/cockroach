@@ -180,6 +180,7 @@ func (cb *ColumnBackfiller) RunColumnBackfillChunk(
 		cb.updateCols,
 		requestedCols,
 		row.UpdaterOnlyColumns,
+		false, /* errorOnDup */
 		row.CheckFKs,
 		cb.evalCtx,
 		&cb.alloc,
