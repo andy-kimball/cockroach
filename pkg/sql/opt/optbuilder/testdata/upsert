@@ -2377,36 +2377,26 @@ upsert decimals
       │    │    ├── columns: a:8(decimal) b:9(decimal[]) c:10(decimal) d:12(decimal) decimals.a:13(decimal) decimals.b:14(decimal[]) decimals.c:15(decimal) decimals.d:16(decimal)
       │    │    ├── key columns: [8] = [13]
       │    │    ├── lookup columns are key
-      │    │    ├── upsert-distinct-on
-      │    │    │    ├── columns: a:8(decimal) b:9(decimal[]) c:10(decimal) d:12(decimal)
-      │    │    │    ├── grouping columns: a:8(decimal)
-      │    │    │    ├── project
-      │    │    │    │    ├── columns: d:12(decimal) a:8(decimal) b:9(decimal[]) c:10(decimal)
-      │    │    │    │    ├── values
-      │    │    │    │    │    ├── columns: a:8(decimal) b:9(decimal[]) c:10(decimal)
-      │    │    │    │    │    └── tuple [type=tuple{decimal, decimal[], decimal}]
-      │    │    │    │    │         ├── function: crdb_internal.round_decimal_values [type=decimal]
-      │    │    │    │    │         │    ├── const: 1.1 [type=decimal]
-      │    │    │    │    │         │    └── const: 0 [type=int]
-      │    │    │    │    │         ├── function: crdb_internal.round_decimal_values [type=decimal[]]
-      │    │    │    │    │         │    ├── const: ARRAY[0.95] [type=decimal[]]
-      │    │    │    │    │         │    └── const: 1 [type=int]
-      │    │    │    │    │         └── function: crdb_internal.round_decimal_values [type=decimal]
-      │    │    │    │    │              ├── const: 1.23 [type=decimal]
-      │    │    │    │    │              └── const: 1 [type=int]
-      │    │    │    │    └── projections
+      │    │    ├── project
+      │    │    │    ├── columns: d:12(decimal) a:8(decimal) b:9(decimal[]) c:10(decimal)
+      │    │    │    ├── values
+      │    │    │    │    ├── columns: a:8(decimal) b:9(decimal[]) c:10(decimal)
+      │    │    │    │    └── tuple [type=tuple{decimal, decimal[], decimal}]
+      │    │    │    │         ├── function: crdb_internal.round_decimal_values [type=decimal]
+      │    │    │    │         │    ├── const: 1.1 [type=decimal]
+      │    │    │    │         │    └── const: 0 [type=int]
+      │    │    │    │         ├── function: crdb_internal.round_decimal_values [type=decimal[]]
+      │    │    │    │         │    ├── const: ARRAY[0.95] [type=decimal[]]
+      │    │    │    │         │    └── const: 1 [type=int]
       │    │    │    │         └── function: crdb_internal.round_decimal_values [type=decimal]
-      │    │    │    │              ├── plus [type=decimal]
-      │    │    │    │              │    ├── variable: a [type=decimal]
-      │    │    │    │              │    └── variable: c [type=decimal]
+      │    │    │    │              ├── const: 1.23 [type=decimal]
       │    │    │    │              └── const: 1 [type=int]
-      │    │    │    └── aggregations
-      │    │    │         ├── first-agg [type=decimal[]]
-      │    │    │         │    └── variable: b [type=decimal[]]
-      │    │    │         ├── first-agg [type=decimal]
-      │    │    │         │    └── variable: c [type=decimal]
-      │    │    │         └── first-agg [type=decimal]
-      │    │    │              └── variable: d [type=decimal]
+      │    │    │    └── projections
+      │    │    │         └── function: crdb_internal.round_decimal_values [type=decimal]
+      │    │    │              ├── plus [type=decimal]
+      │    │    │              │    ├── variable: a [type=decimal]
+      │    │    │              │    └── variable: c [type=decimal]
+      │    │    │              └── const: 1 [type=int]
       │    │    └── filters (true)
       │    └── projections
       │         ├── case [type=decimal]
@@ -2464,36 +2454,26 @@ upsert decimals
       │    │    ├── columns: a:8(decimal) b:9(decimal[]) c:10(decimal) d:12(decimal) decimals.a:13(decimal) decimals.b:14(decimal[]) decimals.c:15(decimal) decimals.d:16(decimal)
       │    │    ├── key columns: [8] = [13]
       │    │    ├── lookup columns are key
-      │    │    ├── upsert-distinct-on
-      │    │    │    ├── columns: a:8(decimal) b:9(decimal[]) c:10(decimal) d:12(decimal)
-      │    │    │    ├── grouping columns: a:8(decimal)
-      │    │    │    ├── project
-      │    │    │    │    ├── columns: d:12(decimal) a:8(decimal) b:9(decimal[]) c:10(decimal)
-      │    │    │    │    ├── values
-      │    │    │    │    │    ├── columns: a:8(decimal) b:9(decimal[]) c:10(decimal)
-      │    │    │    │    │    └── tuple [type=tuple{decimal, decimal[], decimal}]
-      │    │    │    │    │         ├── function: crdb_internal.round_decimal_values [type=decimal]
-      │    │    │    │    │         │    ├── const: 1.1 [type=decimal]
-      │    │    │    │    │         │    └── const: 0 [type=int]
-      │    │    │    │    │         ├── function: crdb_internal.round_decimal_values [type=decimal[]]
-      │    │    │    │    │         │    ├── null [type=decimal[]]
-      │    │    │    │    │         │    └── const: 1 [type=int]
-      │    │    │    │    │         └── function: crdb_internal.round_decimal_values [type=decimal]
-      │    │    │    │    │              ├── const: 1.23 [type=decimal]
-      │    │    │    │    │              └── const: 1 [type=int]
-      │    │    │    │    └── projections
+      │    │    ├── project
+      │    │    │    ├── columns: d:12(decimal) a:8(decimal) b:9(decimal[]) c:10(decimal)
+      │    │    │    ├── values
+      │    │    │    │    ├── columns: a:8(decimal) b:9(decimal[]) c:10(decimal)
+      │    │    │    │    └── tuple [type=tuple{decimal, decimal[], decimal}]
+      │    │    │    │         ├── function: crdb_internal.round_decimal_values [type=decimal]
+      │    │    │    │         │    ├── const: 1.1 [type=decimal]
+      │    │    │    │         │    └── const: 0 [type=int]
+      │    │    │    │         ├── function: crdb_internal.round_decimal_values [type=decimal[]]
+      │    │    │    │         │    ├── null [type=decimal[]]
+      │    │    │    │         │    └── const: 1 [type=int]
       │    │    │    │         └── function: crdb_internal.round_decimal_values [type=decimal]
-      │    │    │    │              ├── plus [type=decimal]
-      │    │    │    │              │    ├── variable: a [type=decimal]
-      │    │    │    │              │    └── variable: c [type=decimal]
+      │    │    │    │              ├── const: 1.23 [type=decimal]
       │    │    │    │              └── const: 1 [type=int]
-      │    │    │    └── aggregations
-      │    │    │         ├── first-agg [type=decimal[]]
-      │    │    │         │    └── variable: b [type=decimal[]]
-      │    │    │         ├── first-agg [type=decimal]
-      │    │    │         │    └── variable: c [type=decimal]
-      │    │    │         └── first-agg [type=decimal]
-      │    │    │              └── variable: d [type=decimal]
+      │    │    │    └── projections
+      │    │    │         └── function: crdb_internal.round_decimal_values [type=decimal]
+      │    │    │              ├── plus [type=decimal]
+      │    │    │              │    ├── variable: a [type=decimal]
+      │    │    │              │    └── variable: c [type=decimal]
+      │    │    │              └── const: 1 [type=int]
       │    │    └── filters (true)
       │    └── projections
       │         ├── case [type=decimal]
@@ -2562,36 +2542,26 @@ upsert decimals
       │    │    ├── columns: a:8(decimal) b:9(decimal[]) c:10(decimal) d:12(decimal) decimals.a:13(decimal) decimals.b:14(decimal[]) decimals.c:15(decimal) decimals.d:16(decimal)
       │    │    ├── key columns: [8] = [13]
       │    │    ├── lookup columns are key
-      │    │    ├── upsert-distinct-on
-      │    │    │    ├── columns: a:8(decimal) b:9(decimal[]) c:10(decimal) d:12(decimal)
-      │    │    │    ├── grouping columns: a:8(decimal)
-      │    │    │    ├── project
-      │    │    │    │    ├── columns: d:12(decimal) a:8(decimal) b:9(decimal[]) c:10(decimal)
-      │    │    │    │    ├── values
-      │    │    │    │    │    ├── columns: a:8(decimal) b:9(decimal[]) c:10(decimal)
-      │    │    │    │    │    └── tuple [type=tuple{decimal, decimal[], decimal}]
-      │    │    │    │    │         ├── function: crdb_internal.round_decimal_values [type=decimal]
-      │    │    │    │    │         │    ├── const: 1.1 [type=decimal]
-      │    │    │    │    │         │    └── const: 0 [type=int]
-      │    │    │    │    │         ├── function: crdb_internal.round_decimal_values [type=decimal[]]
-      │    │    │    │    │         │    ├── const: ARRAY[0.95] [type=decimal[]]
-      │    │    │    │    │         │    └── const: 1 [type=int]
-      │    │    │    │    │         └── function: crdb_internal.round_decimal_values [type=decimal]
-      │    │    │    │    │              ├── const: 1.23 [type=decimal]
-      │    │    │    │    │              └── const: 1 [type=int]
-      │    │    │    │    └── projections
+      │    │    ├── project
+      │    │    │    ├── columns: d:12(decimal) a:8(decimal) b:9(decimal[]) c:10(decimal)
+      │    │    │    ├── values
+      │    │    │    │    ├── columns: a:8(decimal) b:9(decimal[]) c:10(decimal)
+      │    │    │    │    └── tuple [type=tuple{decimal, decimal[], decimal}]
+      │    │    │    │         ├── function: crdb_internal.round_decimal_values [type=decimal]
+      │    │    │    │         │    ├── const: 1.1 [type=decimal]
+      │    │    │    │         │    └── const: 0 [type=int]
+      │    │    │    │         ├── function: crdb_internal.round_decimal_values [type=decimal[]]
+      │    │    │    │         │    ├── const: ARRAY[0.95] [type=decimal[]]
+      │    │    │    │         │    └── const: 1 [type=int]
       │    │    │    │         └── function: crdb_internal.round_decimal_values [type=decimal]
-      │    │    │    │              ├── plus [type=decimal]
-      │    │    │    │              │    ├── variable: a [type=decimal]
-      │    │    │    │              │    └── variable: c [type=decimal]
+      │    │    │    │              ├── const: 1.23 [type=decimal]
       │    │    │    │              └── const: 1 [type=int]
-      │    │    │    └── aggregations
-      │    │    │         ├── first-agg [type=decimal[]]
-      │    │    │         │    └── variable: b [type=decimal[]]
-      │    │    │         ├── first-agg [type=decimal]
-      │    │    │         │    └── variable: c [type=decimal]
-      │    │    │         └── first-agg [type=decimal]
-      │    │    │              └── variable: d [type=decimal]
+      │    │    │    └── projections
+      │    │    │         └── function: crdb_internal.round_decimal_values [type=decimal]
+      │    │    │              ├── plus [type=decimal]
+      │    │    │              │    ├── variable: a [type=decimal]
+      │    │    │              │    └── variable: c [type=decimal]
+      │    │    │              └── const: 1 [type=int]
       │    │    └── filters (true)
       │    └── projections
       │         ├── case [type=decimal]

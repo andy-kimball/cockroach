@@ -300,12 +300,22 @@ func (c *CustomFuncs) HasStrictKey(input memo.RelExpr) bool {
 
 // ColsAreStrictKey returns true if the given columns form a strict key for the
 // given input expression. A strict key means that any two rows will have unique
-// key column values. Nulls are treated as equal to one another (i.e. no
+// key column values, where nulls are treated as equal to one another (i.e. no
 // duplicate nulls allowed). Having a strict key means that the set of key
 // column values uniquely determine the values of all other columns in the
 // relation.
 func (c *CustomFuncs) ColsAreStrictKey(cols opt.ColSet, input memo.RelExpr) bool {
 	return input.Relational().FuncDeps.ColsAreStrictKey(cols)
+}
+
+// ColsAreLaxKey returns true if the given columns form a lax key for the given
+// input expression. A lax key means that any two rows will have unique key
+// column values, where nulls are treated as *not* equal to one another (i.e. if
+// any column has a NULL value, it is considered distinct from all other rows).
+// Having a lax key means that the set of key column values uniquely determine
+// the values of all other columns in the relation.
+func (c *CustomFuncs) ColsAreLaxKey(cols opt.ColSet, input memo.RelExpr) bool {
+	return input.Relational().FuncDeps.ColsAreLaxKey(cols)
 }
 
 // ColsAreConst returns true if the given columns have the same values for all

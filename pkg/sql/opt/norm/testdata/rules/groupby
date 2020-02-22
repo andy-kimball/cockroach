@@ -48,6 +48,17 @@ CREATE TABLE s (
 )
 ----
 
+exec-ddl
+CREATE TABLE nullablecols
+(
+    c1 INT,
+    c2 INT,
+    c3 INT,
+    UNIQUE (c1),
+    UNIQUE (c2, c3)
+)
+----
+
 # --------------------------------------------------
 # ConvertGroupByToDistinct
 # --------------------------------------------------
@@ -78,23 +89,23 @@ group-by
 
 
 # --------------------------------------------------
-# EliminateDistinct
+# EliminateDistinctOn
 # --------------------------------------------------
-norm expect=EliminateDistinct
+norm expect=EliminateDistinctOn
 SELECT DISTINCT k FROM a
 ----
 scan a
  ├── columns: k:1(int!null)
  └── key: (1)
 
-norm expect=EliminateDistinct
+norm expect=EliminateDistinctOn
 SELECT DISTINCT s, i FROM a
 ----
 scan a
  ├── columns: s:4(string!null) i:2(int!null)
  └── key: (2,4)
 
-norm expect=EliminateDistinct
+norm expect=EliminateDistinctOn
 SELECT DISTINCT ON (s, i) k, i, f FROM a
 ----
 scan a
@@ -103,7 +114,7 @@ scan a
  └── fd: (1)-->(2,3), (2,3)~~>(1)
 
 # Strict superset of key.
-norm expect=EliminateDistinct
+norm expect=EliminateDistinctOn
 SELECT DISTINCT s, i, f FROM a
 ----
 scan a
@@ -112,7 +123,7 @@ scan a
  └── fd: (2,4)-->(3), (2,3)~~>(4)
 
 # Distinct not eliminated because columns aren't superset of any weak key.
-norm expect-not=EliminateDistinct
+norm expect-not=EliminateDistinctOn
 SELECT DISTINCT i FROM a
 ----
 distinct-on
@@ -123,7 +134,7 @@ distinct-on
       └── columns: i:2(int!null)
 
 # Distinct not eliminated despite a unique index on (f, i) because f is nullable.
-norm expect-not=EliminateDistinct
+norm expect-not=EliminateDistinctOn
 SELECT DISTINCT f, i FROM a
 ----
 distinct-on
@@ -144,7 +155,7 @@ exec-ddl
 CREATE TABLE table1 (col0 REGCLASS, col1 REGTYPE, col2 INT4);
 ----
 
-norm expect=EliminateDistinct
+norm expect=EliminateDistinctOn
 SELECT
   (
     SELECT
@@ -172,6 +183,116 @@ values
                 ├── cardinality: [0 - 0]
                 ├── key: ()
                 └── fd: ()-->(3)
+
+# --------------------------------------------------
+# EliminateUpsertDistinctOn
+# --------------------------------------------------
+
+# Input has a lax key (c2, c3), which allows upsert-distinct-on to be removed.
+norm expect=EliminateUpsertDistinctOn
+INSERT INTO uvwz SELECT c2, c3 FROM nullablecols ON CONFLICT (u,v) DO UPDATE SET w=1
+----
+upsert uvwz
+ ├── columns: <none>
+ ├── canary column: 16
+ ├── fetch columns: u:12(int) v:13(int) w:14(int) z:15(int) uvwz.rowid:16(int)
+ ├── insert-mapping:
+ │    ├──  c2:7 => u:1
+ │    ├──  c3:8 => v:2
+ │    ├──  column10:10 => w:3
+ │    ├──  column10:10 => z:4
+ │    └──  column11:11 => uvwz.rowid:5
+ ├── update-mapping:
+ │    └──  upsert_w:20 => w:3
+ ├── cardinality: [0 - 0]
+ ├── side-effects, mutations
+ └── project
+      ├── columns: upsert_w:20(int) c2:7(int) c3:8(int) column10:10(int) column11:11(int) u:12(int) v:13(int) w:14(int) z:15(int) uvwz.rowid:16(int)
+      ├── side-effects
+      ├── lax-key: (7,8,16)
+      ├── fd: ()-->(10), (7,8)~~>(11), (16)-->(12-15), (12,13)-->(14-16), (13,14)-->(12,15,16), (16)-->(20)
+      ├── left-join (hash)
+      │    ├── columns: c2:7(int) c3:8(int) column10:10(int) column11:11(int) u:12(int) v:13(int) w:14(int) z:15(int) uvwz.rowid:16(int)
+      │    ├── side-effects
+      │    ├── lax-key: (7,8,16)
+      │    ├── fd: ()-->(10), (7,8)~~>(11), (16)-->(12-15), (12,13)-->(14-16), (13,14)-->(12,15,16)
+      │    ├── project
+      │    │    ├── columns: column10:10(int) column11:11(int) c2:7(int) c3:8(int)
+      │    │    ├── side-effects
+      │    │    ├── lax-key: (7,8)
+      │    │    ├── fd: ()-->(10), (7,8)~~>(11)
+      │    │    ├── scan nullablecols
+      │    │    │    ├── columns: c2:7(int) c3:8(int)
+      │    │    │    └── lax-key: (7,8)
+      │    │    └── projections
+      │    │         ├── null [type=int]
+      │    │         └── unique_rowid() [type=int, side-effects]
+      │    ├── scan uvwz
+      │    │    ├── columns: u:12(int!null) v:13(int!null) w:14(int!null) z:15(int!null) uvwz.rowid:16(int!null)
+      │    │    ├── key: (16)
+      │    │    └── fd: (16)-->(12-15), (12,13)-->(14-16), (13,14)-->(12,15,16)
+      │    └── filters
+      │         ├── c2 = u [type=bool, outer=(7,12), constraints=(/7: (/NULL - ]; /12: (/NULL - ]), fd=(7)==(12), (12)==(7)]
+      │         └── c3 = v [type=bool, outer=(8,13), constraints=(/8: (/NULL - ]; /13: (/NULL - ]), fd=(8)==(13), (13)==(8)]
+      └── projections
+           └── CASE WHEN uvwz.rowid IS NULL THEN column10 ELSE 1 END [type=int, outer=(10,16)]
+
+# Input has a strict key (c3), which allows upsert-distinct-on to be removed.
+norm expect=EliminateUpsertDistinctOn
+INSERT INTO uvwz SELECT c2, c3 FROM nullablecols WHERE c2 = 1 AND c3 > 1
+ON CONFLICT (u,v) DO UPDATE SET w=1
+----
+upsert uvwz
+ ├── columns: <none>
+ ├── canary column: 16
+ ├── fetch columns: u:12(int) v:13(int) w:14(int) z:15(int) uvwz.rowid:16(int)
+ ├── insert-mapping:
+ │    ├──  c2:7 => u:1
+ │    ├──  c3:8 => v:2
+ │    ├──  column10:10 => w:3
+ │    ├──  column10:10 => z:4
+ │    └──  column11:11 => uvwz.rowid:5
+ ├── update-mapping:
+ │    └──  upsert_w:20 => w:3
+ ├── cardinality: [0 - 0]
+ ├── side-effects, mutations
+ └── project
+      ├── columns: upsert_w:20(int) c2:7(int!null) c3:8(int!null) column10:10(int) column11:11(int) u:12(int) v:13(int) w:14(int) z:15(int) uvwz.rowid:16(int)
+      ├── side-effects
+      ├── key: (8,16)
+      ├── fd: ()-->(7,10), (8)-->(11), (16)-->(12-15), (12,13)-->(14-16), (13,14)-->(12,15,16), (16)-->(20)
+      ├── left-join (hash)
+      │    ├── columns: c2:7(int!null) c3:8(int!null) column10:10(int) column11:11(int) u:12(int) v:13(int) w:14(int) z:15(int) uvwz.rowid:16(int)
+      │    ├── side-effects
+      │    ├── key: (8,16)
+      │    ├── fd: ()-->(7,10), (8)-->(11), (16)-->(12-15), (12,13)-->(14-16), (13,14)-->(12,15,16)
+      │    ├── project
+      │    │    ├── columns: column10:10(int) column11:11(int) c2:7(int!null) c3:8(int!null)
+      │    │    ├── side-effects
+      │    │    ├── key: (8)
+      │    │    ├── fd: ()-->(7,10), (8)-->(11)
+      │    │    ├── select
+      │    │    │    ├── columns: c2:7(int!null) c3:8(int!null)
+      │    │    │    ├── key: (8)
+      │    │    │    ├── fd: ()-->(7)
+      │    │    │    ├── scan nullablecols
+      │    │    │    │    ├── columns: c2:7(int) c3:8(int)
+      │    │    │    │    └── lax-key: (7,8)
+      │    │    │    └── filters
+      │    │    │         ├── c2 = 1 [type=bool, outer=(7), constraints=(/7: [/1 - /1]; tight), fd=()-->(7)]
+      │    │    │         └── c3 > 1 [type=bool, outer=(8), constraints=(/8: [/2 - ]; tight)]
+      │    │    └── projections
+      │    │         ├── null [type=int]
+      │    │         └── unique_rowid() [type=int, side-effects]
+      │    ├── scan uvwz
+      │    │    ├── columns: u:12(int!null) v:13(int!null) w:14(int!null) z:15(int!null) uvwz.rowid:16(int!null)
+      │    │    ├── key: (16)
+      │    │    └── fd: (16)-->(12-15), (12,13)-->(14-16), (13,14)-->(12,15,16)
+      │    └── filters
+      │         ├── c2 = u [type=bool, outer=(7,12), constraints=(/7: (/NULL - ]; /12: (/NULL - ]), fd=(7)==(12), (12)==(7)]
+      │         └── c3 = v [type=bool, outer=(8,13), constraints=(/8: (/NULL - ]; /13: (/NULL - ]), fd=(8)==(13), (13)==(8)]
+      └── projections
+           └── CASE WHEN uvwz.rowid IS NULL THEN column10 ELSE 1 END [type=int, outer=(10,16)]
 
 # --------------------------------------------------
 # EliminateGroupByProject

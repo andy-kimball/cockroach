@@ -21,11 +21,30 @@
 # Since a DistinctOn operator can serve as a projection operator, we need to
 # replace it with a Project so that the correct columns are projected. The
 # project itself may be eliminated later by other rules.
-[EliminateDistinct, Normalize]
+[EliminateDistinctOn, Normalize]
 (DistinctOn
     $input:*
     $aggs:*
     $groupingPrivate:* & (ColsAreStrictKey (GroupingCols $groupingPrivate) $input)
+)
+=>
+(Project
+  $input
+  []
+  (GroupingOutputCols $groupingPrivate $aggs)
+)
+
+# EliminateUpsertDistinctOn is similar to the EliminateDistinct rule, except
+# that the distinct operator can be removed when the grouping columns form a lax
+# key (rather than a strong key). UpsertDistinctOn ensures that the input is
+# grouped according to the same rules that a lax key uses, so if the grouping
+# columns are known to already form a lax key, the UpsertDistinctOn operator is
+# redundant and can be eliminated.
+[EliminateUpsertDistinctOn, Normalize]
+(UpsertDistinctOn
+    $input:*
+    $aggs:*
+    $groupingPrivate:* & (ColsAreLaxKey (GroupingCols $groupingPrivate) $input)
 )
 =>
 (Project
