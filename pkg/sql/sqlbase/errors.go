@@ -19,7 +19,8 @@ import (
 )
 
 const (
-	DuplicateUpsertErrText = "UPSERT or INSERT...ON CONFLICT command cannot affect row a second time"
+	DuplicateUpsertErrText  = "UPSERT or INSERT...ON CONFLICT command cannot affect row a second time"
+	MultiRowSubqueryErrText = "more than one row returned by a subquery used as an expression"
 
 	txnAbortedMsg = "current transaction is aborted, commands ignored " +
 		"until end of transaction block"

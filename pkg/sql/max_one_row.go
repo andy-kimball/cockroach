@@ -13,9 +13,8 @@ package sql
 import (
 	"context"
 
-	"github.com/cockroachdb/cockroach/pkg/sql/pgwire/pgcode"
-	"github.com/cockroachdb/cockroach/pkg/sql/pgwire/pgerror"
 	"github.com/cockroachdb/cockroach/pkg/sql/sem/tree"
+	"github.com/cockroachdb/cockroach/pkg/sql/sqlbase"
 )
 
 // max1RowNode wraps another planNode, returning at most 1 row from the wrapped
@@ -29,8 +28,9 @@ import (
 type max1RowNode struct {
 	plan planNode
 
-	nexted bool
-	values tree.Datums
+	nexted    bool
+	values    tree.Datums
+	errorText string
 }
 
 func (m *max1RowNode) startExec(runParams) error {
@@ -56,8 +56,7 @@ func (m *max1RowNode) Next(params runParams) (bool, error) {
 		var secondOk bool
 		secondOk, err = m.plan.Next(params)
 		if secondOk {
-			return false, pgerror.Newf(pgcode.CardinalityViolation,
-				"more than one row returned by a subquery used as an expression")
+			return false, sqlbase.NewCardinalityViolationError(m.errorText)
 		}
 	}
 	return ok, err
