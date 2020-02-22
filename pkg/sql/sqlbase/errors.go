@@ -19,6 +19,8 @@ import (
 )
 
 const (
+	DuplicateUpsertErrText = "UPSERT or INSERT...ON CONFLICT command cannot affect row a second time"
+
 	txnAbortedMsg = "current transaction is aborted, commands ignored " +
 		"until end of transaction block"
 	txnCommittedMsg = "current transaction is committed, commands ignored " +
@@ -119,6 +121,12 @@ func IsRelationAlreadyExistsError(err error) bool {
 func NewWrongObjectTypeError(name tree.NodeFormatter, desiredObjType string) error {
 	return pgerror.Newf(pgcode.WrongObjectType, "%q is not a %s",
 		tree.ErrString(name), desiredObjType)
+}
+
+// NewCardinalityViolationError creates an error with the CardinalityViolation
+// error code.
+func NewCardinalityViolationError(text string) error {
+	return pgerror.Newf(pgcode.CardinalityViolation, text)
 }
 
 // NewSyntaxError creates a syntax error.
