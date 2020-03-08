@@ -1,0 +1,1172 @@
+# This is a postgres regress test suite.
+# https://github.com/postgres/postgres/blob/master/src/test/regress/sql/subselect.sql
+# Adapted to sqllogictest format
+# PGDIFF comments call out differences between PG and CRDB and/or lack of support.
+
+#
+# SUBSELECT
+#
+
+statement ok
+CREATE TABLE INT4_TBL(f1 int4);
+INSERT INTO INT4_TBL(f1) VALUES (0);
+INSERT INTO INT4_TBL(f1) VALUES (123456);
+INSERT INTO INT4_TBL(f1) VALUES (-123456);
+INSERT INTO INT4_TBL(f1) VALUES (2147483647);
+INSERT INTO INT4_TBL(f1) VALUES (-2147483647);
+
+statement ok
+CREATE TABLE INT8_TBL(q1 int8, q2 int8);
+INSERT INTO INT8_TBL VALUES(123, 456);
+INSERT INTO INT8_TBL VALUES(123, 4567890123456789);
+INSERT INTO INT8_TBL VALUES(4567890123456789, 123);
+INSERT INTO INT8_TBL VALUES(4567890123456789, 4567890123456789);
+INSERT INTO INT8_TBL VALUES(4567890123456789, -4567890123456789);
+
+statement ok
+IMPORT TABLE tenk1 (
+	unique1		int4,
+	unique2		int4,
+	two			int4,
+	four		int4,
+	ten			int4,
+	twenty		int4,
+	hundred		int4,
+	thousand	int4,
+	twothousand	int4,
+	fivethous	int4,
+	tenthous	int4,
+	odd			int4,
+	even		int4,
+	stringu1	name,
+	stringu2	name,
+	string4		name
+) CSV DATA ('nodelocal://self/data/tenk.data') WITH DELIMITER = e'\t';
+CREATE INDEX tenk1_unique1 ON tenk1 (unique1);
+CREATE INDEX tenk1_unique2 ON tenk1 (unique2);
+CREATE INDEX tenk1_hundred ON tenk1 (hundred);
+CREATE INDEX tenk1_thous_tenthous ON tenk1 (thousand, tenthous);
+
+query I
+SELECT 1 AS one WHERE 1 IN (SELECT 1);
+----
+1
+
+query I
+SELECT 1 AS zero WHERE 1 NOT IN (SELECT 1);
+----
+
+query I
+SELECT 1 AS zero WHERE 1 IN (SELECT 2);
+----
+
+# Check grammar's handling of extra parens in assorted contexts
+query I
+SELECT * FROM (SELECT 1 AS x) ss;
+----
+1
+
+query I
+SELECT * FROM ((SELECT 1 AS x)) ss;
+----
+1
+
+query I
+(SELECT 2) UNION SELECT 2;
+----
+2
+
+query I
+((SELECT 2)) UNION SELECT 2;
+----
+2
+
+query I
+SELECT ((SELECT 2) UNION SELECT 2);
+----
+2
+
+query I
+SELECT (((SELECT 2)) UNION SELECT 2);
+----
+2
+
+query I
+SELECT (SELECT ARRAY[1,2,3])[1];
+----
+1
+
+query I
+SELECT ((SELECT ARRAY[1,2,3]))[2];
+----
+2
+
+query I
+SELECT (((SELECT ARRAY[1,2,3])))[3];
+----
+3
+
+# Set up some simple test tables
+statement ok
+CREATE TABLE SUBSELECT_TBL (
+  f1 integer,
+  f2 integer,
+  f3 float
+);
+INSERT INTO SUBSELECT_TBL VALUES (1, 2, 3);
+INSERT INTO SUBSELECT_TBL VALUES (2, 3, 4);
+INSERT INTO SUBSELECT_TBL VALUES (3, 4, 5);
+INSERT INTO SUBSELECT_TBL VALUES (1, 1, 1);
+INSERT INTO SUBSELECT_TBL VALUES (2, 2, 2);
+INSERT INTO SUBSELECT_TBL VALUES (3, 3, 3);
+INSERT INTO SUBSELECT_TBL VALUES (6, 7, 8);
+INSERT INTO SUBSELECT_TBL VALUES (8, 9, NULL);
+
+query TIIR rowsort
+SELECT '' AS eight, * FROM SUBSELECT_TBL;
+----
+·  1  2  3
+·  2  3  4
+·  3  4  5
+·  1  1  1
+·  2  2  2
+·  3  3  3
+·  6  7  8
+·  8  9  NULL
+
+# Uncorrelated subselects
+query TI
+SELECT '' AS two, f1 AS "Constant Select" FROM SUBSELECT_TBL
+  WHERE f1 IN (SELECT 1);
+----
+·  1
+·  1
+
+query TI rowsort
+SELECT '' AS six, f1 AS "Uncorrelated Field" FROM SUBSELECT_TBL
+  WHERE f1 IN (SELECT f2 FROM SUBSELECT_TBL);
+----
+·  1
+·  2
+·  3
+·  1
+·  2
+·  3
+
+query TI rowsort
+SELECT '' AS six, f1 AS "Uncorrelated Field" FROM SUBSELECT_TBL
+  WHERE f1 IN (SELECT f2 FROM SUBSELECT_TBL WHERE
+    f2 IN (SELECT f1 FROM SUBSELECT_TBL));
+----
+·  1
+·  2
+·  3
+·  1
+·  2
+·  3
+
+query TII rowsort
+SELECT '' AS three, f1, f2
+  FROM SUBSELECT_TBL
+  WHERE (f1, f2) NOT IN (SELECT f2, CAST(f3 AS int4) FROM SUBSELECT_TBL
+                         WHERE f3 IS NOT NULL);
+----
+·  1  2
+·  6  7
+·  8  9
+
+# Correlated subselects
+query TII rowsort
+SELECT '' AS six, f1 AS "Correlated Field", f2 AS "Second Field"
+  FROM SUBSELECT_TBL upper
+  WHERE f1 IN (SELECT f2 FROM SUBSELECT_TBL WHERE f1 = upper.f1);
+----
+·  1  2
+·  2  3
+·  3  4
+·  1  1
+·  2  2
+·  3  3
+
+query TIR rowsort
+SELECT '' AS six, f1 AS "Correlated Field", f3 AS "Second Field"
+  FROM SUBSELECT_TBL upper
+  WHERE f1 IN
+    (SELECT f2 FROM SUBSELECT_TBL WHERE CAST(upper.f2 AS float) = f3);
+----
+·  2  4
+·  3  5
+·  1  1
+·  2  2
+·  3  3
+
+# PGDIFF: float IN int is an error in CRDB, so added ::float cast.
+query TIR rowsort
+SELECT '' AS six, f1 AS "Correlated Field", f3 AS "Second Field"
+  FROM SUBSELECT_TBL upper
+  WHERE f3 IN (SELECT (upper.f1 + f2)::float FROM SUBSELECT_TBL
+               WHERE f2 = CAST(f3 AS integer));
+----
+·  1  3
+·  2  4
+·  3  5
+·  6  8
+
+query TI rowsort
+SELECT '' AS five, f1 AS "Correlated Field"
+  FROM SUBSELECT_TBL
+  WHERE (f1, f2) IN (SELECT f2, CAST(f3 AS int4) FROM SUBSELECT_TBL
+                     WHERE f3 IS NOT NULL);
+----
+·  2
+·  3
+·  1
+·  2
+·  3
+
+#
+# Use some existing tables in the regression test
+#
+query TIR rowsort
+SELECT '' AS eight, ss.f1 AS "Correlated Field", ss.f3 AS "Second Field"
+  FROM SUBSELECT_TBL ss
+  WHERE f1 NOT IN (SELECT f1+1 FROM INT4_TBL
+                   WHERE f1 != ss.f1 AND f1 < 2147483647);
+----
+·  2  4
+·  3  5
+·  2  2
+·  3  3
+·  6  8
+·  8  NULL
+
+# PGDIFF: CRDB does not have a float8() function, so switched to ::float8.
+# PGDIFF: CRDB does not allow float8 / int, so cast int -> float8
+query IR rowsort
+select q1, count(*)::float8 / (select count(*) from int8_tbl)::float8
+from int8_tbl group by q1 order by q1;
+----
+123               0.4
+4567890123456789  0.6
+
+# PGDIFF: CRDB returns "string" instead of "text"
+# Unspecified-type literals in output columns should resolve as text
+query TT
+SELECT *, pg_typeof(f1) FROM
+  (SELECT 'foo' AS f1 FROM generate_series(1,3)) ss ORDER BY 1;
+----
+foo  string
+foo  string
+foo  string
+
+query B
+select 1 = all (select (select 1));
+----
+true
+
+#
+# Test cases to catch unpleasant interactions between IN-join processing
+# and subquery pullup.
+#
+query I
+select count(*) from
+  (select 1 from tenk1 a
+   where unique1 IN (select hundred from tenk1 b)) ss;
+----
+100
+
+query I
+select count(distinct ss.ten) from
+  (select ten from tenk1 a
+   where unique1 IN (select hundred from tenk1 b)) ss;
+----
+10
+
+query I
+select count(*) from
+  (select 1 from tenk1 a
+   where unique1 IN (select distinct hundred from tenk1 b)) ss;
+----
+100
+
+query I
+select count(distinct ss.ten) from
+  (select ten from tenk1 a
+   where unique1 IN (select distinct hundred from tenk1 b)) ss;
+----
+10
+
+#
+# Test cases to check for overenthusiastic optimization of
+# "IN (SELECT DISTINCT ...)" and related cases.  Per example from
+# Luca Pireddu and Michael Fuhr.
+#
+statement ok
+CREATE TABLE foo (id integer);
+CREATE TABLE bar (id1 integer, id2 integer);
+INSERT INTO foo VALUES (1);
+INSERT INTO bar VALUES (1, 1);
+INSERT INTO bar VALUES (2, 2);
+INSERT INTO bar VALUES (3, 1);
+
+# These cases require an extra level of distinct-ing above subquery s
+query I
+SELECT * FROM foo WHERE id IN
+    (SELECT id2 FROM (SELECT DISTINCT id1, id2 FROM bar) AS s);
+----
+1
+
+query I
+SELECT * FROM foo WHERE id IN
+    (SELECT id2 FROM (SELECT id1,id2 FROM bar GROUP BY id1,id2) AS s);
+----
+1
+
+query I
+SELECT * FROM foo WHERE id IN
+    (SELECT id2 FROM (SELECT id1, id2 FROM bar UNION
+                      SELECT id1, id2 FROM bar) AS s);
+----
+1
+
+# These cases do not
+query I
+SELECT * FROM foo WHERE id IN
+    (SELECT id2 FROM (SELECT DISTINCT ON (id2) id1, id2 FROM bar) AS s);
+----
+1
+
+query I
+SELECT * FROM foo WHERE id IN
+    (SELECT id2 FROM (SELECT id2 FROM bar GROUP BY id2) AS s);
+----
+1
+
+query I
+SELECT * FROM foo WHERE id IN
+    (SELECT id2 FROM (SELECT id2 FROM bar UNION
+                      SELECT id2 FROM bar) AS s);
+----
+1
+
+statement ok
+DROP TABLE foo;
+DROP TABLE bar;
+
+
+#
+# Test case to catch problems with multiply nested sub-SELECTs not getting
+# recalculated properly.  Per bug report from Didier Moens.
+#
+statement ok
+CREATE TABLE orderstest (
+    approver_ref integer,
+    po_ref integer,
+    ordercanceled boolean
+);
+INSERT INTO orderstest VALUES (1, 1, false);
+INSERT INTO orderstest VALUES (66, 5, false);
+INSERT INTO orderstest VALUES (66, 6, false);
+INSERT INTO orderstest VALUES (66, 7, false);
+INSERT INTO orderstest VALUES (66, 1, true);
+INSERT INTO orderstest VALUES (66, 8, false);
+INSERT INTO orderstest VALUES (66, 1, false);
+INSERT INTO orderstest VALUES (77, 1, false);
+INSERT INTO orderstest VALUES (1, 1, false);
+INSERT INTO orderstest VALUES (66, 1, false);
+INSERT INTO orderstest VALUES (1, 1, false);
+
+# PGDIFF: Star expansions don't work in views (#10028), so manually expand for now.
+statement ok
+CREATE VIEW orders_view AS
+SELECT approver_ref, po_ref, ordercanceled, --*,
+(SELECT CASE
+   WHEN ord.approver_ref=1 THEN '---' ELSE 'Approved'
+ END) AS "Approved",
+(SELECT CASE
+ WHEN ord.ordercanceled
+ THEN 'Canceled'
+ ELSE
+  (SELECT CASE
+		WHEN ord.po_ref=1
+		THEN
+		 (SELECT CASE
+				WHEN ord.approver_ref=1
+				THEN '---'
+				ELSE 'Approved'
+			END)
+		ELSE 'PO'
+	END)
+END) AS "Status",
+(CASE
+ WHEN ord.ordercanceled
+ THEN 'Canceled'
+ ELSE
+  (CASE
+		WHEN ord.po_ref=1
+		THEN
+		 (CASE
+				WHEN ord.approver_ref=1
+				THEN '---'
+				ELSE 'Approved'
+			END)
+		ELSE 'PO'
+	END)
+END) AS "Status_OK"
+FROM orderstest ord;
+
+query IIBTTT rowsort
+SELECT * FROM orders_view;
+----
+1   1  false  ---       ---       ---
+66  5  false  Approved  PO        PO
+66  6  false  Approved  PO        PO
+66  7  false  Approved  PO        PO
+66  1  true   Approved  Canceled  Canceled
+66  8  false  Approved  PO        PO
+66  1  false  Approved  Approved  Approved
+77  1  false  Approved  Approved  Approved
+1   1  false  ---       ---       ---
+66  1  false  Approved  Approved  Approved
+1   1  false  ---       ---       ---
+
+statement ok
+DROP TABLE orderstest cascade;
+
+# PGDIFF: CRDB does not support rules.
+##
+## Test cases to catch situations where rule rewriter fails to propagate
+## hasSubLinks flag correctly.  Per example from Kyle Bateman.
+##
+#statement ok
+#create table parts (
+#    partnum     text,
+#    cost        float8
+#);
+#create table shipped (
+#    ttype       char(2),
+#    ordnum      int4,
+#    partnum     text,
+#    value       float8
+#);
+#create view shipped_view as
+#    select * from shipped where ttype = 'wt';
+#create rule shipped_view_insert as on insert to shipped_view do instead
+#    insert into shipped values('wt', new.ordnum, new.partnum, new.value);
+#insert into parts (partnum, cost) values (1, 1234.56);
+#insert into shipped_view (ordnum, partnum, value)
+#    values (0, 1, (select cost from parts where partnum = '1'));
+#select * from shipped_view;
+# ttype | ordnum | partnum |  value
+#----+----+----+----
+# wt    |      0 | 1       | 1234.56
+#(1 row)
+#
+#create rule shipped_view_update as on update to shipped_view do instead
+#    update shipped set partnum = new.partnum, value = new.value
+#        where ttype = new.ttype and ordnum = new.ordnum;
+#update shipped_view set value = 11
+#    from int4_tbl a join int4_tbl b
+#      on (a.f1 = (select f1 from int4_tbl c where c.f1=b.f1))
+#    where ordnum = a.f1;
+#select * from shipped_view;
+# ttype | ordnum | partnum | value
+#----+----+----+----
+# wt    |      0 | 1       |    11
+#(1 row)
+#
+#select f1, ss1 as relabel from
+#    (select *, (select sum(f1) from int4_tbl b where f1 >= a.f1) as ss1
+#     from int4_tbl a) ss;
+#     f1      |  relabel
+#----+----
+#           0 | 2147607103
+#      123456 | 2147607103
+#     -123456 | 2147483647
+#  2147483647 | 2147483647
+# -2147483647 |          0
+#(5 rows)
+
+#
+# Test cases involving PARAM_EXEC parameters and min/max index optimizations.
+# Per bug report from David Sanchez i Gregori.
+#
+query I
+select * from (
+  select max(unique1) from tenk1 as a
+  where exists (select 1 from tenk1 as b where b.thousand = a.unique2)
+) ss;
+----
+9997
+
+query I
+select * from (
+  select min(unique1) from tenk1 as a
+  where not exists (select 1 from tenk1 as b where b.unique2 = 10000)
+) ss;
+----
+0
+
+#
+# Test that an IN implemented using a UniquePath does unique-ification
+# with the right semantics, as per bug #4113.  (Unfortunately we have
+# no simple way to ensure that this test case actually chooses that type
+# of plan, but it does in releases 7.4-8.3.  Note that an ordering difference
+# here might mean that some other plan type is being used, rendering the test
+# pointless.)
+#
+statement ok
+create table numeric_table (num_col numeric);
+insert into numeric_table values (1), (1.000000000000000000001), (2), (3);
+create table float_table (float_col float8);
+insert into float_table values (1), (2), (3);
+
+# PGDIFF: CRDB does not allow "float IN (numeric)", so add ::float cast.
+query R rowsort
+select * from float_table
+  where float_col in (select num_col::float from numeric_table);
+----
+1
+2
+3
+
+# PGDIFF: CRDB does not allow "numeric IN (float)", so add ::float cast.
+query R rowsort
+select * from numeric_table
+  where num_col::float in (select float_col from float_table);
+----
+                      1
+1.000000000000000000001
+                      2
+                      3
+
+#
+# Test case for bug #4290: bogus calculation of subplan param sets
+#
+statement ok
+create table ta (id int primary key, val int);
+insert into ta values(1,1);
+insert into ta values(2,2);
+create table tb (id int primary key, aval int);
+insert into tb values(1,1);
+insert into tb values(2,1);
+insert into tb values(3,2);
+insert into tb values(4,2);
+create table tc (id int primary key, aid int);
+insert into tc values(1,1);
+insert into tc values(2,2);
+
+query I rowsort
+select
+  ( select min(tb.id) from tb
+    where tb.aval = (select ta.val from ta where ta.id = tc.aid) ) as min_tb_id
+from tc;
+----
+1
+3
+
+#
+# Test case for 8.3 "failed to locate grouping columns" bug
+#
+statement ok
+create table t1 (f1 numeric(14,0), f2 varchar(30));
+
+query TTT
+select * from
+  (select distinct f1, f2, (select f2 from t1 x where x.f1 = up.f1) as fs
+   from t1 up) ss
+group by f1,f2,fs;
+----
+
+#
+# Test case for bug #5514 (mishandling of whole-row Vars in subselects)
+#
+# PGDIFF: CRDB doesn't support star expansion in views (#10048), so expand manually.
+statement ok
+create table table_a(id integer);
+insert into table_a values (42);
+create view view_a as select id AS id from table_a;
+
+# PGDIFF: CRDB doesn't support unqualified table name syntax (#45854)
+query T
+select (view_a.*) from view_a;
+----
+(42)
+
+# PGDIFF: CRDB doesn't allow outer "star" references (#45855).
+#query T
+#select (select (view_a.*)) from view_a;
+#----
+#(42)
+#
+#query T
+#select (select (select (view_a.*))) from view_a;
+#----
+#(42)
+#
+#query T
+#select (select (a.*)::text) from view_a a;
+#----
+#(42)
+
+#
+# Check that whole-row Vars reading the result of a subselect don't include
+# any junk columns therein
+#
+query T rowsort
+select (q.*) from (select max(f1) from int4_tbl group by f1 order by f1) q;
+----
+(-2147483647)
+(-123456)
+(0)
+(123456)
+(2147483647)
+
+query T rowsort
+with q as (select max(f1) from int4_tbl group by f1 order by f1)
+  select (q.*) from q;
+----
+(-2147483647)
+(-123456)
+(0)
+(123456)
+(2147483647)
+
+#
+# Test case for sublinks pushed down into subselects via join alias expansion
+#
+query T
+select
+  (select sq1) as qq1
+from
+  (select exists(select 1 from int4_tbl where f1 = q2) as sq1, 42 as dummy
+   from int8_tbl) sq0
+  join
+  int4_tbl i4 on dummy = i4.f1;
+----
+
+#
+# Test case for subselect within UPDATE of INSERT...ON CONFLICT DO UPDATE
+#
+statement ok
+create table upsert(key int4 primary key, val text);
+insert into upsert values(1, 'val') on conflict (key) do update set val = 'not seen';
+insert into upsert values(1, 'val') on conflict (key) do update set val = 'seen with subselect ' || (select f1 from int4_tbl where f1 != 0 limit 1)::text;
+
+query IT
+select * from upsert;
+----
+1  seen with subselect 123456
+
+query IT rowsort
+with aa as (select 'int4_tbl' u from int4_tbl limit 1)
+insert into upsert values (1, 'x'), (999, 'y')
+on conflict (key) do update set val = (select u from aa)
+returning *;
+----
+1    int4_tbl
+999  y
+
+#
+# Test case for cross-type partial matching in hashed subplan (bug #7597)
+#
+statement ok
+create table outer_7597 (f1 int4, f2 int4);
+insert into outer_7597 values (0, 0);
+insert into outer_7597 values (1, 0);
+insert into outer_7597 values (0, null);
+insert into outer_7597 values (1, null);
+create table inner_7597(c1 int8, c2 int8);
+insert into inner_7597 values(0, null);
+
+query II rowsort
+select * from outer_7597 where (f1, f2) not in (select * from inner_7597);
+----
+1  0
+1  NULL
+
+#
+# Similar test case using text that verifies that collation
+# information is passed through by execTuplesEqual() in nodeSubplan.c
+# (otherwise it would error in texteq())
+#
+statement ok
+create table outer_text (f1 text, f2 text);
+insert into outer_text values ('a', 'a');
+insert into outer_text values ('b', 'a');
+insert into outer_text values ('a', null);
+insert into outer_text values ('b', null);
+create table inner_text (c1 text, c2 text);
+insert into inner_text values ('a', null);
+
+query TT rowsort
+select * from outer_text where (f1, f2) not in (select * from inner_text);
+----
+b  a
+b  NULL
+
+#
+# Another test case for cross-type hashed subplans: comparison of
+# inner-side values must be done with appropriate operator
+#
+query B
+select 'foo'::text in (select 'bar'::name union all select 'bar'::name);
+----
+false
+
+#
+# Test case for premature memory release during hashing of subplan output
+#
+query B
+select '1'::text in (select '1'::name union all select '1'::name);
+----
+true
+
+#
+# Test case for planner bug with nested EXISTS handling
+#
+# PGDIFF: This runs too slowly with CRDB since it isn't fully decorrelated.
+# TODO(andyk): Can we figure out how to decorrelate the anti-join?
+#query II
+#select a.thousand from tenk1 a, tenk1 b
+#where a.thousand = b.thousand
+#  and exists ( select 1 from tenk1 c where b.hundred = c.hundred
+#                   and not exists ( select 1 from tenk1 d
+#                                    where a.thousand = d.thousand ) );
+#----
+
+#
+# Check we don't misoptimize a NOT IN where the subquery returns no rows.
+#
+statement ok
+create table notinouter (a int);
+create table notininner (b int not null);
+insert into notinouter values (null), (1);
+
+query I rowsort
+select * from notinouter where a not in (select b from notininner);
+----
+NULL
+1
+
+#
+# Check we behave sanely in corner case of empty SELECT list (bug #8648)
+#
+statement ok
+create table nocolumns();
+
+query B
+select exists(select * from nocolumns);
+----
+false
+
+#
+# Check behavior with a SubPlan in VALUES (bug #14924)
+#
+# PGDIFF: CRDB cannot decorrelate the subquery in the WHERE clause. (#45856)
+#query I rowsort
+#select val.x
+#  from generate_series(1,10) as s(i),
+#  lateral (
+#    values ((select s.i + 1)), (s.i + 101)
+#  ) as val(x)
+#where s.i < 10 and (select val.x) < 110;
+#----
+#   2
+# 102
+#   3
+# 103
+#   4
+# 104
+#   5
+# 105
+#   6
+# 106
+#   7
+# 107
+#   8
+# 108
+#   9
+# 109
+#  10
+
+# another variant of that (bug #16213)
+query B
+select * from
+(values
+  (3 not in (select * from (values (1), (2)) ss1)),
+  (false)
+) ss;
+----
+true
+false
+
+#
+# Check sane behavior with nested IN SubLinks
+#
+query I
+select * from int4_tbl where
+  (case when f1 in (select unique1 from tenk1 a limit 100) then f1 else null end) in
+  (select ten from tenk1 b limit 100);
+----
+0
+
+#
+# Check for incorrect optimization when IN subquery contains a SRF
+#
+# PGDIFF: generate_series can't be used with scalar-group-by (#45843)
+#query I
+#select * from int4_tbl o where (f1, f1) in
+#  (select f1, generate_series(1,50) / 10 g from int4_tbl i group by f1);
+#----
+#0
+
+#
+# check for over-optimization of whole-row Var referencing an Append plan
+#
+# PGDIFF: Type of third column is inferred as INT not NUMERIC.
+query T rowsort
+select (select (q.*) from
+         (select 1,2,3 where f1 > 0
+          union all
+          select 4,5,6.0 where f1 <= 0
+         ) q )
+from int4_tbl;
+----
+(4,5,6)
+(1,2,3)
+(4,5,6)
+(1,2,3)
+(4,5,6)
+
+#
+# Check that volatile quals aren't pushed down past a DISTINCT:
+# nextval() should not be called more than the nominal number of times
+#
+statement ok
+create sequence ts1;
+
+query I
+select * from
+  (select distinct ten from tenk1 limit 100) ss
+  where ten < 10 + nextval('ts1')
+  order by 1;
+----
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+
+query I
+select nextval('ts1');
+----
+11
+
+# PGDIFF: CRDB doesn't support user-defined functions.
+#
+# Check that volatile quals aren't pushed down past a set-returning function;
+# while a nonvolatile qual can be, if it doesn't reference the SRF.
+#
+#create function tattle(x int, y int) returns bool
+#volatile language plpgsql as $$
+#begin
+#  raise notice 'x = %, y = %', x, y;
+#  return x > y;
+#end$$;
+#
+#select * from
+#  (select 9 as x, unnest(array[1,2,3,11,12,13]) as u) ss
+#  where tattle(x, 8);
+#NOTICE:  x = 9, y = 8
+#NOTICE:  x = 9, y = 8
+#NOTICE:  x = 9, y = 8
+#NOTICE:  x = 9, y = 8
+#NOTICE:  x = 9, y = 8
+#NOTICE:  x = 9, y = 8
+# x | u
+#---+----
+# 9 |  1
+# 9 |  2
+# 9 |  3
+# 9 | 11
+# 9 | 12
+# 9 | 13
+#(6 rows)
+#
+#-- if we pretend it's stable, we get different results:
+#alter function tattle(x int, y int) stable;
+#
+#select * from
+#  (select 9 as x, unnest(array[1,2,3,11,12,13]) as u) ss
+#  where tattle(x, 8);
+#NOTICE:  x = 9, y = 8
+# x | u
+#---+----
+# 9 |  1
+# 9 |  2
+# 9 |  3
+# 9 | 11
+# 9 | 12
+# 9 | 13
+#(6 rows)
+#
+#-- although even a stable qual should not be pushed down if it references SRF
+#select * from
+#  (select 9 as x, unnest(array[1,2,3,11,12,13]) as u) ss
+#  where tattle(x, u);
+#NOTICE:  x = 9, y = 1
+#NOTICE:  x = 9, y = 2
+#NOTICE:  x = 9, y = 3
+#NOTICE:  x = 9, y = 11
+#NOTICE:  x = 9, y = 12
+#NOTICE:  x = 9, y = 13
+# x | u
+#---+---
+# 9 | 1
+# 9 | 2
+# 9 | 3
+#(3 rows)
+#
+#drop function tattle(x int, y int);
+
+#
+# Test that LIMIT can be pushed to SORT through a subquery that just projects
+# columns.  We check for that having happened by looking to see if EXPLAIN
+# ANALYZE shows that a top-N sort was used.  We must suppress or filter away
+# all the non-invariant parts of the EXPLAIN ANALYZE output.
+#
+statement ok
+create table sq_limit (pk int primary key, c1 int, c2 int);
+insert into sq_limit values
+    (1, 1, 1),
+    (2, 2, 2),
+    (3, 3, 3),
+    (4, 4, 4),
+    (5, 1, 1),
+    (6, 2, 2),
+    (7, 3, 3),
+    (8, 4, 4);
+
+# PGDIFF: CRDB does not respect the subquery ORDER BY, as allowed by SQL standard.
+query II rowsort
+select * from (select pk,c2 from sq_limit order by c1,pk) as x limit 3;
+----
+1  1
+2  2
+3  3
+
+statement ok
+drop table sq_limit;
+
+# PGDIFF: CRDB does not support cursors.
+#
+# Ensure that backward scan direction isn't propagated into
+# expression subqueries (bug #15336)
+#
+#begin;
+#declare c1 scroll cursor for
+# select * from generate_series(1,4) i
+#  where i <> all (values (2),(3));
+#move forward all in c1;
+#fetch backward all in c1;
+# i
+#---
+# 4
+# 1
+#(2 rows)
+#
+#commit;
+
+#
+# Tests for CTE inlining behavior
+#
+
+# Basic subquery that can be inlined
+query I
+with x as (select * from (select f1 from subselect_tbl) ss)
+select * from x where f1 = 1;
+----
+1
+1
+
+# PGDIFF: CRDB does not support MATERALIZED (#45863).
+# Explicitly request materialization
+#query I
+#with x as materialized (select * from (select f1 from subselect_tbl) ss)
+#select * from x where f1 = 1;
+#----
+
+# Stable functions are safe to inline
+query I
+with x as (select * from (select f1, now() from subselect_tbl) ss)
+select distinct on (f1, now) f1 from x where f1 = 1;
+----
+1
+
+# Volatile functions prevent inlining
+query I
+with x as (select * from (select f1, random() from subselect_tbl) ss)
+select f1 from (select * from x where f1 = 1 union select * from x where f1 = 1);
+----
+1
+1
+
+# SELECT FOR UPDATE cannot be inlined
+query I
+with x as (select * from (select f1 from subselect_tbl for update) ss)
+select * from x where f1 = 1;
+----
+1
+1
+
+# Multiply-referenced CTEs are inlined only when requested
+query I
+with x as (select * from (select f1, now() as n from subselect_tbl) ss)
+select count(*) from x, x x2 where x.n = x2.n;
+----
+64
+
+# PGDIFF: CRDB does not support MATERALIZED (#45863).
+#query I
+#with x as not materialized (select * from (select f1, now() as n from subselect_tbl) ss)
+#select * from x, x x2 where x.n = x2.n;
+#----
+
+# PGDIFF: CRDB raises unexpected error (#45869).
+# Multiply-referenced CTEs can't be inlined if they contain outer self-refs
+#query T
+#with recursive x(a) as
+#  ((values ('a'), ('b'))
+#   union all
+#   (with z as (select * from x)
+#    select z.a || z1.a as a from z cross join z as z1
+#    where length(z.a || z1.a) < 5))
+#select * from x;
+#----
+#a
+#b
+#aa
+#ab
+#ba
+#bb
+#aaaa
+#aaab
+#aaba
+#aabb
+#abaa
+#abab
+#abba
+#abbb
+#baaa
+#baab
+#baba
+#babb
+#bbaa
+#bbab
+#bbba
+#bbbb
+
+# PGDIFF: CRDB does not support MATERALIZED (#45863).
+#query T
+#with recursive x(a) as
+#  ((values ('a'), ('b'))
+#   union all
+#   (with z as not materialized (select * from x)
+#    select z.a || z1.a as a from z cross join z as z1
+#    where length(z.a || z1.a) < 5))
+#select * from x;
+#----
+#a
+#b
+#aa
+#ab
+#ba
+#bb
+#aaaa
+#aaab
+#aaba
+#aabb
+#abaa
+#abab
+#abba
+#abbb
+#baaa
+#baab
+#baba
+#babb
+#bbaa
+#bbab
+#bbba
+#bbbb
+
+query T
+with recursive x(a) as
+  ((values ('a'), ('b'))
+   union all
+   (with z as (select * from x)
+    select z.a || z.a as a from z
+    where length(z.a || z.a) < 5))
+select * from x;
+----
+a
+b
+aa
+bb
+aaaa
+bbbb
+
+# PGDIFF: CRDB does not support MATERALIZED (#45863).
+#query T
+#with recursive x(a) as
+#  ((values ('a'), ('b'))
+#   union all
+#   (with z as not materialized (select * from x)
+#    select z.a || z.a as a from z
+#    where length(z.a || z.a) < 5))
+#select * from x;
+#----
+#a
+#b
+#aa
+#bb
+#aaaa
+#bbbb
+
+# Check handling of outer references
+query I rowsort
+with x as (select * from int4_tbl)
+select * from (with y as (select * from x) select * from y) ss;
+----
+0
+123456
+-123456
+2147483647
+-2147483647
+
+# Ensure that we inline the currect CTE when there are
+# multiple CTEs with the same name
+query I
+with x as (select 1 as y)
+select * from (with x as (select 2 as y) select * from x) ss;
+----
+2
+
+# Row marks are not pushed into CTEs
+query IIR rowsort
+with x as (select * from subselect_tbl)
+select * from x for update;
+----
+1  2  3
+2  3  4
+3  4  5
+1  1  1
+2  2  2
+3  3  3
+6  7  8
+8  9  NULL

@@ -1,0 +1,1875 @@
+# This is a postgres regress test suite.
+# https://github.com/postgres/postgres/blob/master/src/test/regress/sql/aggregates.sql
+# Adapted to sqllogictest format
+# PGDIFF comments call out differences between PG and CRDB and/or lack of support.
+
+#
+# AGGREGATES
+#
+
+# avoid bit-exact output here because operations may not be bit-exact.
+statement ok
+SET extra_float_digits = 0;
+
+statement ok
+IMPORT TABLE onek (
+	unique1		int4,
+	unique2		int4,
+	two			int4,
+	four		int4,
+	ten			int4,
+	twenty		int4,
+	hundred		int4,
+	thousand	int4,
+	twothousand	int4,
+	fivethous	int4,
+	tenthous	int4,
+	odd			int4,
+	even		int4,
+	stringu1	name,
+	stringu2	name,
+	string4		name
+) CSV DATA ('nodelocal://self/data/onek.data') WITH DELIMITER = e'\t';
+CREATE INDEX onek_unique1 ON onek (unique1);
+CREATE INDEX IF NOT EXISTS onek_unique1 ON onek (unique1);
+CREATE INDEX onek_unique2 ON onek (unique2);
+CREATE INDEX onek_hundred ON onek (hundred);
+CREATE INDEX onek_stringu1 ON onek (stringu1);
+
+statement ok
+IMPORT TABLE tenk1 (
+	unique1		int4,
+	unique2		int4,
+	two			int4,
+	four		int4,
+	ten			int4,
+	twenty		int4,
+	hundred		int4,
+	thousand	int4,
+	twothousand	int4,
+	fivethous	int4,
+	tenthous	int4,
+	odd			int4,
+	even		int4,
+	stringu1	name,
+	stringu2	name,
+	string4		name
+) CSV DATA ('nodelocal://self/data/tenk.data') WITH DELIMITER = e'\t';
+CREATE INDEX tenk1_unique1 ON tenk1 (unique1);
+CREATE INDEX tenk1_unique2 ON tenk1 (unique2);
+CREATE INDEX tenk1_hundred ON tenk1 (hundred);
+CREATE INDEX tenk1_thous_tenthous ON tenk1 (thousand, tenthous);
+
+statement ok
+CREATE TABLE aggtest (
+	a 			int2,
+	b			float4
+);
+INSERT INTO aggtest VALUES (56, 7.8), (100, 99.097), (0, 0.09561), (42, 324.78);
+
+# PGDIFF: location field is a "point" in original PG test.
+statement ok
+CREATE TABLE student (
+	name 		text,
+	age			int4,
+	location 	float8[],
+	gpa 		float8
+);
+INSERT INTO student VALUES
+    ('fred', 28, ARRAY[3.1, -1.5], 3.70000000000000020e+00),
+    ('larry', 60, ARRAY[21.8, 4.9], 3.10000000000000010e+00);
+
+statement ok
+CREATE TABLE INT4_TBL(f1 int4);
+INSERT INTO INT4_TBL(f1) VALUES (0);
+INSERT INTO INT4_TBL(f1) VALUES (123456);
+INSERT INTO INT4_TBL(f1) VALUES (-123456);
+INSERT INTO INT4_TBL(f1) VALUES (2147483647);
+INSERT INTO INT4_TBL(f1) VALUES (-2147483647);
+
+# PGDIFF: PG returns 1.5000000000000000
+query R
+SELECT avg(four) AS avg_1 FROM onek;
+----
+1.5
+
+# PGDIFF: PG returns 32.6666666666666667
+query R
+SELECT avg(a) AS avg_32 FROM aggtest WHERE a < 100;
+----
+32.666666666666666667
+
+# In 7.1, avg(float4) is computed using float8 arithmetic.
+# Round the result to 3 digits to avoid platform-specific results.
+# TODO(andyk): Re-enable when #45837 is fixed.
+#query R
+#SELECT avg(b)::numeric(10,3) AS avg_107_943 FROM aggtest;
+#----
+#107.943
+
+query R
+SELECT avg(gpa) AS avg_3_4 FROM ONLY student;
+----
+3.4
+
+query R
+SELECT sum(four) AS sum_1500 FROM onek;
+----
+1500
+
+query R
+SELECT sum(a) AS sum_198 FROM aggtest;
+----
+198
+
+# PGDIFF: PG returns 431.773
+query R
+SELECT sum(b) AS avg_431_773 FROM aggtest;
+----
+431.77261
+
+query R
+SELECT sum(gpa) AS avg_6_8 FROM ONLY student;
+----
+6.8
+
+query I
+SELECT max(four) AS max_3 FROM onek;
+----
+3
+
+query I
+SELECT max(a) AS max_100 FROM aggtest;
+----
+100
+
+query R
+SELECT max(aggtest.b) AS max_324_78 FROM aggtest;
+----
+324.78
+
+query R
+SELECT max(student.gpa) AS max_3_7 FROM student;
+----
+3.7
+
+# PGDIFF: CRDB does not support stddev_pop
+#query R
+#SELECT stddev_pop(b) FROM aggtest;
+#----
+#131.10703231895
+
+# PGDIFF: CRDB does not support stddev_samp
+#query R
+#SELECT stddev_samp(b) FROM aggtest;
+#----
+#151.389360803998
+
+# PGDIFF: CRDB does not support var_pop
+#query R
+#SELECT var_pop(b) FROM aggtest;
+#----
+#17189.0539234823
+
+# PGDIFF: CRDB does not support var_samp
+#query R
+#SELECT var_samp(b) FROM aggtest;
+#----
+#22918.7385646431
+
+# PGDIFF: CRDB does not support stddev_pop
+#query R
+#SELECT stddev_pop(b::numeric) FROM aggtest;
+#----
+#131.107032862199
+
+# PGDIFF: CRDB does not support stddev_samp
+#query R
+#SELECT stddev_samp(b::numeric) FROM aggtest;
+#----
+#151.389361431288
+
+# PGDIFF: CRDB does not support var_pop
+#query R
+#SELECT var_pop(b::numeric) FROM aggtest;
+#----
+#17189.054065929769
+
+# PGDIFF: CRDB does not support var_samp
+#query R
+#SELECT var_samp(b::numeric) FROM aggtest;
+#----
+#22918.738754573025
+
+# PGDIFF: CRDB does not support var_pop
+# population variance is defined for a single tuple, sample variance
+# is not
+#query RR
+#SELECT var_pop(1.0), var_samp(2.0);
+#----
+#0  NULL
+
+# PGDIFF: CRDB does not support stddev_pop
+#query RR
+#SELECT stddev_pop(3.0::numeric), stddev_samp(4.0::numeric);
+#----
+#0  NULL
+
+# verify correct results for null and NaN inputs
+query I
+select sum(null::int4) from generate_series(1,3);
+----
+NULL
+
+query I
+select sum(null::int8) from generate_series(1,3);
+----
+NULL
+
+query T
+select sum(null::numeric) from generate_series(1,3);
+----
+NULL
+
+query R
+select sum(null::float8) from generate_series(1,3);
+----
+NULL
+
+query I
+select avg(null::int4) from generate_series(1,3);
+----
+NULL
+
+query I
+select avg(null::int8) from generate_series(1,3);
+----
+NULL
+
+query T
+select avg(null::numeric) from generate_series(1,3);
+----
+NULL
+
+query R
+select avg(null::float8) from generate_series(1,3);
+----
+NULL
+
+query T
+select sum('NaN'::numeric) from generate_series(1,3);
+----
+NaN
+
+query T
+select avg('NaN'::numeric) from generate_series(1,3);
+----
+NaN
+
+# PGDIFF: CRDB does not support var_pop
+# verify correct results for infinite inputs
+#query RR
+#SELECT avg(x::float8), var_pop(x::float8)
+#FROM (VALUES ('1'), ('infinity')) v(x);
+#----
+#Infinity  NaN
+
+# PGDIFF: CRDB does not support var_pop
+#query RR
+#SELECT avg(x::float8), var_pop(x::float8)
+#FROM (VALUES ('infinity'), ('1')) v(x);
+#----
+#Infinity  NaN
+
+# PGDIFF: CRDB does not support var_pop
+#query RR
+#SELECT avg(x::float8), var_pop(x::float8)
+#FROM (VALUES ('infinity'), ('infinity')) v(x);
+#----
+#Infinity  NaN
+
+# PGDIFF: CRDB does not support var_pop
+#query RR
+#SELECT avg(x::float8), var_pop(x::float8)
+#FROM (VALUES ('-infinity'), ('infinity')) v(x);
+#----
+#NaN  NaN
+
+# PGDIFF: CRDB does not support var_pop
+# test accuracy with a large input offset
+#query RR
+#SELECT avg(x::float8), var_pop(x::float8)
+#FROM (VALUES (100000003), (100000004), (100000006), (100000007)) v(x);
+#----
+#100000005  2.5
+
+# PGDIFF: CRDB does not support var_pop
+#query RR
+#SELECT avg(x::float8), var_pop(x::float8)
+#FROM (VALUES (7000000000005), (7000000000007)) v(x);
+#----
+#7000000000006  1
+
+# PGDIFF: CRDB does not support regr_count
+# SQL2003 binary aggregates
+#query RR
+#SELECT regr_count(b, a) FROM aggtest;
+#----
+#4
+
+# PGDIFF: CRDB does not support regr_sxx
+#query R
+#SELECT regr_sxx(b, a) FROM aggtest;
+#----
+#5099
+
+# PGDIFF: CRDB does not support regr_syy
+#query R
+#SELECT regr_syy(b, a) FROM aggtest;
+#----
+#68756.2156939293
+
+# PGDIFF: CRDB does not support regr_sxy
+#query R
+#SELECT regr_sxy(b, a) FROM aggtest;
+#----
+#2614.51582155004
+
+# PGDIFF: CRDB does not support regr_avgx
+#query R
+#SELECT regr_avgx(b, a), regr_avgy(b, a) FROM aggtest;
+#----
+#49.5  107.943152273074
+
+# PGDIFF: CRDB does not support regr_r2
+#query R
+#SELECT regr_r2(b, a) FROM aggtest;
+#----
+#0.0194977982031803
+
+# PGDIFF: CRDB does not support regr_slope
+#query R
+#SELECT regr_slope(b, a), regr_intercept(b, a) FROM aggtest;
+#----
+#0.512750700441271  82.5619926012309
+
+# PGDIFF: CRDB does not support covar_pop
+#query R
+#SELECT covar_pop(b, a), covar_samp(b, a) FROM aggtest;
+#----
+#653.62895538751  871.505273850014
+
+# PGDIFF: PG returns 0.139634516517873
+query R
+SELECT corr(b, a) FROM aggtest;
+----
+0.139634515055396
+
+statement ok
+CREATE TABLE regr_test (x float8, y float8);
+INSERT INTO regr_test VALUES (10,150),(20,250),(30,350),(80,540),(100,200);
+
+# PGDIFF: CRDB does not support regr_sxx
+# test accum and combine functions directly
+#query IIIIII
+#SELECT count(*), sum(x), regr_sxx(y,x), sum(y),regr_syy(y,x), regr_sxy(y,x)
+#FROM regr_test WHERE x IN (10,20,30,80);
+#----
+#4  140  2900  1290  83075  15050
+
+# PGDIFF: CRDB does not support regr_sxx
+#query IIIIII
+#SELECT count(*), sum(x), regr_sxx(y,x), sum(y),regr_syy(y,x), regr_sxy(y,x)
+#FROM regr_test;
+#----
+#5  240  6280  1490  95080  8680
+
+# PGDIFF: CRDB does not support float8_accum
+#query T
+#SELECT float8_accum('{4,140,2900}'::float8[], 100);
+#----
+#{5,240,6280}
+
+# PGDIFF: CRDB does not support float8_regr_accum
+#query T
+#SELECT float8_regr_accum('{4,140,2900,1290,83075,15050}'::float8[], 200, 100);
+#----
+#{5,240,6280,1490,95080,8680}
+
+# PGDIFF: CRDB does not support regr_sxx
+#query IIIIII
+#SELECT count(*), sum(x), regr_sxx(y,x), sum(y),regr_syy(y,x), regr_sxy(y,x)
+#FROM regr_test WHERE x IN (10,20,30);
+#----
+#3  60  200  750  20000  2000
+
+# PGDIFF: CRDB does not support regr_sxx
+#query IIIIII
+#SELECT count(*), sum(x), regr_sxx(y,x), sum(y),regr_syy(y,x), regr_sxy(y,x)
+#FROM regr_test WHERE x IN (80,100);
+#----
+#2  180  200  740  57800  -3400
+
+# PGDIFF: CRDB does not support float8_combine
+#query T
+#SELECT float8_combine('{3,60,200}'::float8[], '{0,0,0}'::float8[]);
+#----
+#{3,60,200}
+
+# PGDIFF: CRDB does not support float8_combine
+#query T
+#SELECT float8_combine('{0,0,0}'::float8[], '{2,180,200}'::float8[]);
+#----
+#{2,180,200}
+
+# PGDIFF: CRDB does not support float8_combine
+#query T
+#SELECT float8_combine('{3,60,200}'::float8[], '{2,180,200}'::float8[]);
+#----
+#{5,240,6280}
+
+# PGDIFF: CRDB does not support float8_regr_combine
+#query T
+#SELECT float8_regr_combine('{3,60,200,750,20000,2000}'::float8[],
+#                           '{0,0,0,0,0,0}'::float8[]);
+#----
+#{3,60,200,750,20000,2000}
+
+# PGDIFF: CRDB does not support float8_regr_combine
+#query T
+#SELECT float8_regr_combine('{0,0,0,0,0,0}'::float8[],
+#                           '{2,180,200,740,57800,-3400}'::float8[]);
+#----
+#{2,180,200,740,57800,-3400}
+
+# PGDIFF: CRDB does not support float8_regr_combine
+#query T
+#SELECT float8_regr_combine('{3,60,200,750,20000,2000}'::float8[],
+#                           '{2,180,200,740,57800,-3400}'::float8[]);
+#----
+#{5,240,6280,1490,95080,8680}
+
+statement ok
+DROP TABLE regr_test;
+
+# test count, distinct
+query I
+SELECT count(four) AS cnt_1000 FROM onek;
+----
+1000
+
+query I
+SELECT count(DISTINCT four) AS cnt_4 FROM onek;
+----
+4
+
+query IIT
+select ten, count(*), sum(four) from onek
+group by ten order by ten;
+----
+0  100  100
+1  100  200
+2  100  100
+3  100  200
+4  100  100
+5  100  200
+6  100  100
+7  100  200
+8  100  100
+9  100  200
+
+query IIT
+select ten, count(four), sum(DISTINCT four) from onek
+group by ten order by ten;
+----
+0  100  2
+1  100  4
+2  100  2
+3  100  4
+4  100  2
+5  100  4
+6  100  2
+7  100  4
+8  100  2
+9  100  4
+
+# PGDIFF: CRDB does not support newavg
+# user-defined aggregates
+#query T
+#SELECT newavg(four) AS avg_1 FROM onek;
+#----
+#1.5000000000000000
+
+# PGDIFF: CRDB does not support newsum
+#query T
+#SELECT newsum(four) AS sum_1500 FROM onek;
+#----
+#1500
+
+# PGDIFF: CRDB does not support newcnt
+#query I
+#SELECT newcnt(four) AS cnt_1000 FROM onek;
+#----
+#1000
+
+# PGDIFF: CRDB does not support newcnt
+#query I
+#SELECT newcnt(*) AS cnt_1000 FROM onek;
+#----
+#1000
+
+# PGDIFF: CRDB does not support oldcnt
+#query I
+#SELECT oldcnt(*) AS cnt_1000 FROM onek;
+#----
+#1000
+
+# PGDIFF: CRDB does not support sum2
+#query I
+#SELECT sum2(q1,q2) FROM int8_tbl;
+#----
+#18271560493827981
+
+# PGDIFF: CRDB does not support outer-level aggregates in WHERE (#45838)
+# test for outer-level aggregates
+# this should work
+#query IT
+#select ten, sum(distinct four) from onek a
+#group by ten
+#having exists (select 1 from onek b where sum(distinct a.four) = b.four);
+#----
+#0  2
+#2  2
+#4  2
+#6  2
+#8  2
+
+# this should fail because subquery has an agg of its own in WHERE
+query error aggregate functions are not allowed in WHERE
+select ten, sum(distinct four) from onek a
+group by ten
+having exists (select 1 from onek b
+               where sum(distinct a.four + b.four) = b.four);
+
+# PGDIFF: Added "limit 1" to subquery, or it runs forever due to lack of
+# decorrelation of max1row operator.
+# Test handling of sublinks within outer-level aggregates.
+# Per bug report from Daniel Grace.
+query I
+select
+  (select max((select i.unique2 from tenk1 i where i.unique1 = o.unique1 limit 1)))
+from tenk1 o;
+----
+9999
+
+# Test handling of Params within aggregate arguments in hashed aggregation.
+# Per bug report from Jeevan Chalke.
+query IIT
+select s1, s2, sm
+from generate_series(1, 3) s1,
+     lateral (select s2, sum(s1 + s2) sm
+              from generate_series(1, 3) s2 group by s2) ss
+order by 1, 2;
+----
+1  1  2
+1  2  3
+1  3  4
+2  1  3
+2  2  4
+2  3  5
+3  1  4
+3  2  5
+3  3  6
+
+query T rowsort
+select array(select sum(x+y) s
+            from generate_series(1,3) y group by y order by s)
+  from generate_series(1,3) x;
+----
+{2,3,4}
+{3,4,5}
+{4,5,6}
+
+#
+# test for bitwise integer aggregates
+#
+statement ok
+CREATE TABLE bitwise_test(
+  i2 INT2,
+  i4 INT4,
+  i8 INT8,
+  i INTEGER,
+  x INT2,
+  y BIT(4)
+);
+
+# empty case
+query II
+SELECT
+  BIT_AND(i2) AS "?",
+  BIT_OR(i4)  AS "?"
+FROM bitwise_test;
+----
+NULL  NULL
+
+statement ok
+INSERT INTO bitwise_test VALUES
+    (1, 1, 1, 1,    1, '0101'),
+    (3, 3, 3, NULL, 2, '0100'),
+    (7, 7, 7, 3,    4, '1100')
+
+# PGDIFF: CRDB does not support bitwise functions on BIT (#45841)
+query IIIIIIIIII
+SELECT
+  BIT_AND(i2) AS "1",
+  BIT_AND(i4) AS "1",
+  BIT_AND(i8) AS "1",
+  BIT_AND(i)  AS "?",
+  BIT_AND(x)  AS "0",
+--  BIT_AND(y)  AS "0100",
+  BIT_OR(i2)  AS "7",
+  BIT_OR(i4)  AS "7",
+  BIT_OR(i8)  AS "7",
+  BIT_OR(i)   AS "?",
+  BIT_OR(x)   AS "7"
+--  BIT_OR(y)   AS "1101"
+FROM bitwise_test;
+----
+1  1  1  1  0  7  7  7  3  7
+
+#
+# test boolean aggregates
+#
+statement ok
+CREATE TABLE bool_test(
+  b1 BOOL,
+  b2 BOOL,
+  b3 BOOL,
+  b4 BOOL);
+
+# empty case
+query BB
+SELECT
+  BOOL_AND(b1)   AS "n",
+  BOOL_OR(b3)    AS "n"
+FROM bool_test;
+----
+NULL  NULL
+
+statement ok
+INSERT INTO bool_test VALUES
+    (TRUE,  NULL, FALSE, NULL),
+    (FALSE, TRUE, NULL,  NULL),
+    (NULL,  TRUE, FALSE, NULL)
+
+query BBBBBB
+SELECT
+  BOOL_AND(b1)     AS "f",
+  BOOL_AND(b2)     AS "t",
+  BOOL_AND(b3)     AS "f",
+  BOOL_AND(b4)     AS "n",
+  BOOL_AND(NOT b2) AS "f",
+  BOOL_AND(NOT b3) AS "t"
+FROM bool_test;
+----
+false  true  false  NULL  false  true
+
+# PGDIFF CRDB does not support the EVERY function
+#query BBBBBB
+#SELECT
+#  EVERY(b1)     AS "f",
+#  EVERY(b2)     AS "t",
+#  EVERY(b3)     AS "f",
+#  EVERY(b4)     AS "n",
+#  EVERY(NOT b2) AS "f",
+#  EVERY(NOT b3) AS "t"
+#FROM bool_test;
+#----
+#false  true  false  NULL  false  true
+
+query BBBBBB
+SELECT
+  BOOL_OR(b1)      AS "t",
+  BOOL_OR(b2)      AS "t",
+  BOOL_OR(b3)      AS "f",
+  BOOL_OR(b4)      AS "n",
+  BOOL_OR(NOT b2)  AS "f",
+  BOOL_OR(NOT b3)  AS "t"
+FROM bool_test;
+----
+true  true  false  NULL  false  true
+
+#
+# Test cases that should be optimized into indexscans instead of
+# the generic aggregate implementation.
+#
+# Basic cases
+query I
+select min(unique1) from tenk1;
+----
+0
+
+query I
+select max(unique1) from tenk1;
+----
+9999
+
+query I
+select max(unique1) from tenk1 where unique1 < 42;
+----
+41
+
+query I
+select max(unique1) from tenk1 where unique1 > 42;
+----
+9999
+
+# multi-column index (uses tenk1_thous_tenthous)
+query I
+select max(tenthous) from tenk1 where thousand = 33;
+----
+9033
+
+query I
+select min(tenthous) from tenk1 where thousand = 33;
+----
+33
+
+# check parameter propagation into an indexscan subquery
+query II rowsort
+select f1, (select min(unique1) from tenk1 where unique1 > f1) AS gt
+  from int4_tbl;
+----
+0            1
+123456       NULL
+-123456      0
+2147483647   NULL
+-2147483647  0
+
+# check some cases that were handled incorrectly in 8.3.0
+query I
+select distinct max(unique2) from tenk1;
+----
+9999
+
+query I
+select max(unique2) from tenk1 order by 1;
+----
+9999
+
+query I
+select max(unique2) from tenk1 order by max(unique2);
+----
+9999
+
+query I
+select max(unique2) from tenk1 order by max(unique2)+1;
+----
+9999
+
+# PGDIFF: CRDB does not allow generate_series in scalar-group-by (#45843)
+#query II
+#select max(unique2), generate_series(1,3) as g from tenk1 order by g desc;
+#----
+#9999  3
+#9999  2
+#9999  1
+
+# interesting corner case: constant gets optimized into a seqscan
+query I
+select max(100) from tenk1;
+----
+100
+
+# PGDIFF: CRDB does not support table inheritance
+# try it on an inheritance tree
+#statement ok
+#create table minmaxtest(f1 int);
+#create table minmaxtest1() inherits (minmaxtest);
+#create table minmaxtest2() inherits (minmaxtest);
+#create table minmaxtest3() inherits (minmaxtest);
+#create index minmaxtesti on minmaxtest(f1);
+#create index minmaxtest1i on minmaxtest1(f1);
+#create index minmaxtest2i on minmaxtest2(f1 desc);
+#create index minmaxtest3i on minmaxtest3(f1) where f1 is not null;
+#insert into minmaxtest values(11), (12);
+#insert into minmaxtest1 values(13), (14);
+#insert into minmaxtest2 values(15), (16);
+#insert into minmaxtest3 values(17), (18);
+
+#select min(f1), max(f1) from minmaxtest;
+# min | max
+#----+----
+#  11 |  18
+#(1 row)
+
+#-- DISTINCT doesn't do anything useful here, but it shouldn't fail
+
+#select distinct min(f1), max(f1) from minmaxtest;
+# min | max
+#----+----
+#  11 |  18
+#(1 row)
+
+#drop table minmaxtest cascade;
+#drop cascades to table minmaxtest2
+#drop cascades to table minmaxtest3
+
+# check for correct detection of nested-aggregate errors
+query error aggregate function calls cannot be nested
+select max(min(unique1)) from tenk1;
+
+query error aggregate function calls cannot be nested
+select (select max(min(unique1)) from tenk1) from tenk1;
+
+#
+# Test combinations of DISTINCT and/or ORDER BY
+#
+query T
+select array_agg(a order by b)
+  from (values (1,4),(2,3),(3,1),(4,2)) v(a,b);
+----
+{3,4,2,1}
+
+query T
+select array_agg(a order by a)
+  from (values (1,4),(2,3),(3,1),(4,2)) v(a,b);
+----
+{1,2,3,4}
+
+query T
+select array_agg(a order by a desc)
+  from (values (1,4),(2,3),(3,1),(4,2)) v(a,b);
+----
+{4,3,2,1}
+
+query T
+select array_agg(b order by a desc)
+  from (values (1,4),(2,3),(3,1),(4,2)) v(a,b);
+----
+{2,1,3,4}
+
+query T
+select array_agg(distinct a)
+  from (values (1),(2),(1),(3),(null),(2)) v(a);
+----
+{1,2,3,NULL}
+
+# PGDIFF: CRDB does not support distinct + order by (#45844)
+#query T
+#select array_agg(distinct a order by a)
+#  from (values (1),(2),(1),(3),(null),(2)) v(a);
+#----
+#{1,2,3,NULL}
+
+# PGDIFF: CRDB does not support distinct + order by (#45844)
+#query T
+#select array_agg(distinct a order by a desc)
+#  from (values (1),(2),(1),(3),(null),(2)) v(a);
+#----
+#{NULL,3,2,1}
+
+# PGDIFF: CRDB does not support nulls last.
+#query T
+#select array_agg(distinct a order by a desc nulls last)
+#  from (values (1),(2),(1),(3),(null),(2)) v(a);
+#----
+#{3,2,1,NULL}
+
+# PGDIFF: user-defined aggregates are not supported by CRDB
+# multi-arg aggs, strict/nonstrict, distinct/order by
+#query T
+#select aggfstr(a,b,c)
+#  from (values (1,3,'foo'),(0,null,null),(2,2,'bar'),(3,1,'baz')) v(a,b,c);
+#----
+# {"(1,3,foo)","(2,2,bar)","(3,1,baz)"}
+
+#select aggfns(a,b,c)
+#  from (values (1,3,'foo'),(0,null,null),(2,2,'bar'),(3,1,'baz')) v(a,b,c);
+#----
+# {"(1,3,foo)","(0,,)","(2,2,bar)","(3,1,baz)"}
+
+#select aggfstr(distinct a,b,c)
+#  from (values (1,3,'foo'),(0,null,null),(2,2,'bar'),(3,1,'baz')) v(a,b,c),
+#       generate_series(1,3) i;
+#----
+# {"(1,3,foo)","(2,2,bar)","(3,1,baz)"}
+
+#select aggfns(distinct a,b,c)
+#  from (values (1,3,'foo'),(0,null,null),(2,2,'bar'),(3,1,'baz')) v(a,b,c),
+#       generate_series(1,3) i;
+#----
+# {"(0,,)","(1,3,foo)","(2,2,bar)","(3,1,baz)"}
+
+#select aggfstr(distinct a,b,c order by b)
+#  from (values (1,3,'foo'),(0,null,null),(2,2,'bar'),(3,1,'baz')) v(a,b,c),
+#       generate_series(1,3) i;
+#----
+# {"(3,1,baz)","(2,2,bar)","(1,3,foo)"}
+
+#select aggfns(distinct a,b,c order by b)
+#  from (values (1,3,'foo'),(0,null,null),(2,2,'bar'),(3,1,'baz')) v(a,b,c),
+#       generate_series(1,3) i;
+#----
+# {"(3,1,baz)","(2,2,bar)","(1,3,foo)","(0,,)"}
+
+#-- test specific code paths
+#select aggfns(distinct a,a,c order by c using ~<~,a)
+#  from (values (1,3,'foo'),(0,null,null),(2,2,'bar'),(3,1,'baz')) v(a,b,c),
+#       generate_series(1,2) i;
+#----
+# {"(2,2,bar)","(3,3,baz)","(1,1,foo)","(0,0,)"}
+
+#select aggfns(distinct a,a,c order by c using ~<~)
+#  from (values (1,3,'foo'),(0,null,null),(2,2,'bar'),(3,1,'baz')) v(a,b,c),
+#       generate_series(1,2) i;
+#----
+# {"(2,2,bar)","(3,3,baz)","(1,1,foo)","(0,0,)"}
+
+#select aggfns(distinct a,a,c order by a)
+#  from (values (1,3,'foo'),(0,null,null),(2,2,'bar'),(3,1,'baz')) v(a,b,c),
+#       generate_series(1,2) i;
+#----
+# {"(0,0,)","(1,1,foo)","(2,2,bar)","(3,3,baz)"}
+
+#select aggfns(distinct a,b,c order by a,c using ~<~,b)
+#  from (values (1,3,'foo'),(0,null,null),(2,2,'bar'),(3,1,'baz')) v(a,b,c),
+#       generate_series(1,2) i;
+#----
+# {"(0,,)","(1,3,foo)","(2,2,bar)","(3,1,baz)"}
+
+#-- check node I/O via view creation and usage, also deparsing logic
+#create view agg_view1 as
+#  select aggfns(a,b,c)
+#    from (values (1,3,'foo'),(0,null,null),(2,2,'bar'),(3,1,'baz')) v(a,b,c);
+#select * from agg_view1;
+#                    aggfns
+#--------
+# {"(1,3,foo)","(0,,)","(2,2,bar)","(3,1,baz)"}
+
+#select pg_get_viewdef('agg_view1'::regclass);
+#                                                   pg_get_viewdef
+#----------
+#  SELECT aggfns(v.a, v.b, v.c) AS aggfns                                                                            +
+#    FROM ( VALUES (1,3,'foo'::text), (0,NULL::integer,NULL::text), (2,2,'bar'::text), (3,1,'baz'::text)) v(a, b, c);
+#(1 row)
+#
+#create or replace view agg_view1 as
+#  select aggfns(distinct a,b,c)
+#    from (values (1,3,'foo'),(0,null,null),(2,2,'bar'),(3,1,'baz')) v(a,b,c),
+#         generate_series(1,3) i;
+#select * from agg_view1;
+#                    aggfns
+#--------
+# {"(0,,)","(1,3,foo)","(2,2,bar)","(3,1,baz)"}
+#(1 row)
+#
+#select pg_get_viewdef('agg_view1'::regclass);
+#                                                   pg_get_viewdef
+#----------
+#  SELECT aggfns(DISTINCT v.a, v.b, v.c) AS aggfns                                                                   +
+#    FROM ( VALUES (1,3,'foo'::text), (0,NULL::integer,NULL::text), (2,2,'bar'::text), (3,1,'baz'::text)) v(a, b, c),+
+#     generate_series(1, 3) i(i);
+#(1 row)
+#
+#create or replace view agg_view1 as
+#  select aggfns(distinct a,b,c order by b)
+#    from (values (1,3,'foo'),(0,null,null),(2,2,'bar'),(3,1,'baz')) v(a,b,c),
+#         generate_series(1,3) i;
+#select * from agg_view1;
+#                    aggfns
+#--------
+# {"(3,1,baz)","(2,2,bar)","(1,3,foo)","(0,,)"}
+#(1 row)
+#
+#select pg_get_viewdef('agg_view1'::regclass);
+#                                                   pg_get_viewdef
+#----------
+#  SELECT aggfns(DISTINCT v.a, v.b, v.c ORDER BY v.b) AS aggfns                                                      +
+#    FROM ( VALUES (1,3,'foo'::text), (0,NULL::integer,NULL::text), (2,2,'bar'::text), (3,1,'baz'::text)) v(a, b, c),+
+#     generate_series(1, 3) i(i);
+#(1 row)
+#
+#create or replace view agg_view1 as
+#  select aggfns(a,b,c order by b+1)
+#    from (values (1,3,'foo'),(0,null,null),(2,2,'bar'),(3,1,'baz')) v(a,b,c);
+#select * from agg_view1;
+#                    aggfns
+#--------
+# {"(3,1,baz)","(2,2,bar)","(1,3,foo)","(0,,)"}
+#(1 row)
+#
+#select pg_get_viewdef('agg_view1'::regclass);
+#                                                   pg_get_viewdef
+#----------
+#  SELECT aggfns(v.a, v.b, v.c ORDER BY (v.b + 1)) AS aggfns                                                         +
+#    FROM ( VALUES (1,3,'foo'::text), (0,NULL::integer,NULL::text), (2,2,'bar'::text), (3,1,'baz'::text)) v(a, b, c);
+#(1 row)
+#
+#create or replace view agg_view1 as
+#  select aggfns(a,a,c order by b)
+#    from (values (1,3,'foo'),(0,null,null),(2,2,'bar'),(3,1,'baz')) v(a,b,c);
+#select * from agg_view1;
+#                     aggfns
+#----
+# {"(3,3,baz)","(2,2,bar)","(1,1,foo)","(0,0,)"}
+#(1 row)
+#
+#select pg_get_viewdef('agg_view1'::regclass);
+#                                                   pg_get_viewdef
+#----------
+#  SELECT aggfns(v.a, v.a, v.c ORDER BY v.b) AS aggfns                                                               +
+#    FROM ( VALUES (1,3,'foo'::text), (0,NULL::integer,NULL::text), (2,2,'bar'::text), (3,1,'baz'::text)) v(a, b, c);
+#(1 row)
+#
+#create or replace view agg_view1 as
+#  select aggfns(a,b,c order by c using ~<~)
+#    from (values (1,3,'foo'),(0,null,null),(2,2,'bar'),(3,1,'baz')) v(a,b,c);
+#select * from agg_view1;
+#                    aggfns
+#--------
+# {"(2,2,bar)","(3,1,baz)","(1,3,foo)","(0,,)"}
+#(1 row)
+#
+#select pg_get_viewdef('agg_view1'::regclass);
+#                                                   pg_get_viewdef
+#----------
+#  SELECT aggfns(v.a, v.b, v.c ORDER BY v.c USING ~<~ NULLS LAST) AS aggfns                                          +
+#    FROM ( VALUES (1,3,'foo'::text), (0,NULL::integer,NULL::text), (2,2,'bar'::text), (3,1,'baz'::text)) v(a, b, c);
+#(1 row)
+#
+#create or replace view agg_view1 as
+#  select aggfns(distinct a,b,c order by a,c using ~<~,b)
+#    from (values (1,3,'foo'),(0,null,null),(2,2,'bar'),(3,1,'baz')) v(a,b,c),
+#         generate_series(1,2) i;
+#select * from agg_view1;
+#                    aggfns
+#--------
+# {"(0,,)","(1,3,foo)","(2,2,bar)","(3,1,baz)"}
+#(1 row)
+#
+#select pg_get_viewdef('agg_view1'::regclass);
+#                                                   pg_get_viewdef
+#----------
+#  SELECT aggfns(DISTINCT v.a, v.b, v.c ORDER BY v.a, v.c USING ~<~ NULLS LAST, v.b) AS aggfns                       +
+#    FROM ( VALUES (1,3,'foo'::text), (0,NULL::integer,NULL::text), (2,2,'bar'::text), (3,1,'baz'::text)) v(a, b, c),+
+#     generate_series(1, 2) i(i);
+#(1 row)
+#
+#drop view agg_view1;
+
+# incorrect DISTINCT usage errors
+#select aggfns(distinct a,b,c order by i)
+#  from (values (1,1,'foo')) v(a,b,c), generate_series(1,2) i;
+#ERROR:  in an aggregate with DISTINCT, ORDER BY expressions must appear in argument list
+#LINE 1: select aggfns(distinct a,b,c order by i)
+#                                              ^
+#select aggfns(distinct a,b,c order by a,b+1)
+#  from (values (1,1,'foo')) v(a,b,c), generate_series(1,2) i;
+#ERROR:  in an aggregate with DISTINCT, ORDER BY expressions must appear in argument list
+#LINE 1: select aggfns(distinct a,b,c order by a,b+1)
+#                                                ^
+#select aggfns(distinct a,b,c order by a,b,i,c)
+#  from (values (1,1,'foo')) v(a,b,c), generate_series(1,2) i;
+#ERROR:  in an aggregate with DISTINCT, ORDER BY expressions must appear in argument list
+#LINE 1: select aggfns(distinct a,b,c order by a,b,i,c)
+#                                                  ^
+#select aggfns(distinct a,a,c order by a,b)
+#  from (values (1,1,'foo')) v(a,b,c), generate_series(1,2) i;
+#ERROR:  in an aggregate with DISTINCT, ORDER BY expressions must appear in argument list
+#LINE 1: select aggfns(distinct a,a,c order by a,b)
+
+# string_agg tests
+query T
+select string_agg(a,',') from (values('aaaa'),('bbbb'),('cccc')) g(a);
+----
+aaaa,bbbb,cccc
+
+query T
+select string_agg(a,',') from (values('aaaa'),(null),('bbbb'),('cccc')) g(a);
+----
+aaaa,bbbb,cccc
+
+query T
+select string_agg(a,'AB') from (values(null),(null),('bbbb'),('cccc')) g(a);
+----
+bbbbABcccc
+
+query T
+select string_agg(a,',') from (values(null),(null)) g(a);
+----
+NULL
+
+# PGDIFF: CRDB does not support distinct + order by (#45844)
+# check some implicit casting cases, as per bug #5564
+#query T
+#select string_agg(distinct f1, ',' order by f1) from varchar_tbl;  -- ok
+#----
+#a,ab,abcd
+
+# PGDIFF: CRDB does not support distinct + order by (#45844)
+#query error in an aggregate with DISTINCT, ORDER BY expressions must appear in argument list
+#select string_agg(distinct f1::text, ',' order by f1) from varchar_tbl;  -- not ok
+
+# PGDIFF: CRDB does not support distinct + order by (#45844)
+#query error in an aggregate with DISTINCT, ORDER BY expressions must appear in argument list
+#select string_agg(distinct f1, ',' order by f1::text) from varchar_tbl;  -- not ok
+
+# PGDIFF: CRDB does not support distinct + order by (#45844)
+#query T
+#select string_agg(distinct f1::text, ',' order by f1::text) from varchar_tbl;  -- ok
+#----
+#a,ab,abcd
+
+# string_agg bytea tests
+statement ok
+create table bytea_test_table(v bytea);
+
+query T
+select string_agg(v, '') from bytea_test_table;
+----
+NULL
+
+statement ok
+insert into bytea_test_table values(decode('ff','hex'));
+
+query T
+select string_agg(v, '') from bytea_test_table;
+----
+[255]
+
+statement ok
+insert into bytea_test_table values(decode('aa','hex'));
+
+query T
+select string_agg(v, '' ORDER BY v) from bytea_test_table;
+----
+[170 255]
+
+query T
+select string_agg(v, NULL ORDER BY v) from bytea_test_table;
+----
+[170 255]
+
+query T
+select string_agg(v, decode('ee', 'hex') ORDER BY v) from bytea_test_table;
+----
+[170 238 255]
+
+statement ok
+drop table bytea_test_table;
+
+# FILTER tests
+query I
+select min(unique1) filter (where unique1 > 100) from tenk1;
+----
+101
+
+# PGDIFF: FILTER not applied before evaluation of agg expression (#45845)
+#query I
+#select sum(1/ten) filter (where ten > 0) from tenk1;
+#----
+#1000
+
+query IT rowsort
+select ten, sum(distinct four) filter (where four::text ~ '123') from onek a
+group by ten;
+----
+0  NULL
+1  NULL
+2  NULL
+3  NULL
+4  NULL
+5  NULL
+6  NULL
+7  NULL
+8  NULL
+9  NULL
+
+# PGDIFF: CRDB does not support outer-level aggregates in WHERE (#45838)
+#query IT rowsort
+#select ten, sum(distinct four) filter (where four > 10) from onek a
+#group by ten
+#having exists (select 1 from onek b where sum(distinct a.four) = b.four);
+#----
+#0  NULL
+#2  NULL
+#4  NULL
+#6  NULL
+#8  NULL
+
+# PGDIFF: max/min don't work with collated strings (#45846)
+#query T
+#select max(foo COLLATE "en") filter (where (bar collate "en") > ('0' collate "en"))
+#from (values ('a', 'b')) AS v(foo,bar);
+#----
+#a
+
+# outer reference in FILTER (PostgreSQL extension)
+query I
+select (select count(*)
+        from (values (1)) t0(inner_c))
+from (values (2),(3)) t1(outer_c); -- inner query is aggregation query
+----
+1
+1
+
+query I
+select (select count(*) filter (where outer_c <> 0)
+        from (values (1)) t0(inner_c))
+from (values (2),(3)) t1(outer_c); -- outer query is aggregation query
+----
+2
+
+query I
+select (select count(inner_c) filter (where outer_c <> 0)
+        from (values (1)) t0(inner_c))
+from (values (2),(3)) t1(outer_c); -- inner query is aggregation query
+----
+1
+1
+
+query I
+select
+  (select max((select i.unique2 from tenk1 i where i.unique1 = o.unique1 limit 1))
+     filter (where o.unique1 < 10))
+from tenk1 o;					-- outer query is aggregation query
+----
+9998
+
+# subquery in FILTER clause (PostgreSQL extension)
+query T
+select sum(unique1) FILTER (WHERE
+  unique1 IN (SELECT unique1 FROM onek where unique1 < 100)) FROM tenk1;
+----
+4950
+
+# exercise lots of aggregate parts with FILTER
+# PGDIFF: CRDB does not support custom aggregates
+#query T
+#select aggfns(distinct a,b,c order by a,c using ~<~,b) filter (where a > 1)
+#    from (values (1,3,'foo'),(0,null,null),(2,2,'bar'),(3,1,'baz')) v(a,b,c),
+#    generate_series(1,2) i;
+#----
+#{"(2,2,bar)","(3,1,baz)"}
+
+# ordered-set aggregates
+# PGDIFF: CRDB does not support ordered-set aggregates
+#query
+#select p, percentile_cont(p) within group (order by x::float8)
+#from generate_series(1,5) x,
+#     (values (0::float8),(0.1),(0.25),(0.4),(0.5),(0.6),(0.75),(0.9),(1)) v(p)
+#group by p order by p;
+#----
+#    0 |               1
+#  0.1 |             1.4
+# 0.25 |               2
+#  0.4 |             2.6
+#  0.5 |               3
+#  0.6 |             3.4
+# 0.75 |               4
+#  0.9 |             4.6
+#    1 |               5
+#
+#select p, percentile_cont(p order by p) within group (order by x)  -- error
+#from generate_series(1,5) x,
+#     (values (0::float8),(0.1),(0.25),(0.4),(0.5),(0.6),(0.75),(0.9),(1)) v(p)
+#group by p order by p;
+#ERROR:  cannot use multiple ORDER BY clauses with WITHIN GROUP
+#LINE 1: select p, percentile_cont(p order by p) within group (order ...
+#                                                ^
+#select p, sum() within group (order by x::float8)  -- error
+#from generate_series(1,5) x,
+#     (values (0::float8),(0.1),(0.25),(0.4),(0.5),(0.6),(0.75),(0.9),(1)) v(p)
+#group by p order by p;
+#ERROR:  sum is not an ordered-set aggregate, so it cannot have WITHIN GROUP
+#LINE 1: select p, sum() within group (order by x::float8)
+#                  ^
+#select p, percentile_cont(p,p)  -- error
+#from generate_series(1,5) x,
+#     (values (0::float8),(0.1),(0.25),(0.4),(0.5),(0.6),(0.75),(0.9),(1)) v(p)
+#group by p order by p;
+#ERROR:  WITHIN GROUP is required for ordered-set aggregate percentile_cont
+#LINE 1: select p, percentile_cont(p,p)
+#                  ^
+#select percentile_cont(0.5) within group (order by b) from aggtest;
+# percentile_cont
+#----
+# 53.4485001564026
+#(1 row)
+#
+#select percentile_cont(0.5) within group (order by b), sum(b) from aggtest;
+# percentile_cont  |   sum
+#----+------
+# 53.4485001564026 | 431.773
+#(1 row)
+#
+#select percentile_cont(0.5) within group (order by thousand) from tenk1;
+# percentile_cont
+#----
+#           499.5
+#(1 row)
+#
+#select percentile_disc(0.5) within group (order by thousand) from tenk1;
+# percentile_disc
+#----
+#             499
+#(1 row)
+#
+#select rank(3) within group (order by x)
+#from (values (1),(1),(2),(2),(3),(3),(4)) v(x);
+# rank
+#----
+#    5
+#(1 row)
+#
+#select cume_dist(3) within group (order by x)
+#from (values (1),(1),(2),(2),(3),(3),(4)) v(x);
+# cume_dist
+#-------
+#     0.875
+#(1 row)
+#
+#select percent_rank(3) within group (order by x)
+#from (values (1),(1),(2),(2),(3),(3),(4),(5)) v(x);
+# percent_rank
+#----
+#          0.5
+#(1 row)
+#
+#select dense_rank(3) within group (order by x)
+#from (values (1),(1),(2),(2),(3),(3),(4)) v(x);
+# dense_rank
+#----
+#          3
+#(1 row)
+#
+#select percentile_disc(array[0,0.1,0.25,0.5,0.75,0.9,1]) within group (order by thousand)
+#from tenk1;
+#      percentile_disc
+#-----
+# {0,99,249,499,749,899,999}
+#(1 row)
+#
+#select percentile_cont(array[0,0.25,0.5,0.75,1]) within group (order by thousand)
+#from tenk1;
+#       percentile_cont
+#------
+# {0,249.75,499.5,749.25,999}
+#(1 row)
+#
+#select percentile_disc(array[[null,1,0.5],[0.75,0.25,null]]) within group (order by thousand)
+#from tenk1;
+#         percentile_disc
+#------
+# {{NULL,999,499},{749,249,NULL}}
+#(1 row)
+#
+#select percentile_cont(array[0,1,0.25,0.75,0.5,1,0.3,0.32,0.35,0.38,0.4]) within group (order by x)
+#from generate_series(1,6) x;
+#             percentile_cont
+#------
+# {1,6,2.25,4.75,3.5,6,2.5,2.6,2.75,2.9,3}
+#(1 row)
+#
+#select ten, mode() within group (order by string4) from tenk1 group by ten;
+# ten |  mode
+#----+-----
+#   0 | HHHHxx
+#   1 | OOOOxx
+#   2 | VVVVxx
+#   3 | OOOOxx
+#   4 | HHHHxx
+#   5 | HHHHxx
+#   6 | OOOOxx
+#   7 | AAAAxx
+#   8 | VVVVxx
+#   9 | VVVVxx
+#(10 rows)
+#
+#select percentile_disc(array[0.25,0.5,0.75]) within group (order by x)
+#from unnest('{fred,jim,fred,jack,jill,fred,jill,jim,jim,sheila,jim,sheila}'::text[]) u(x);
+# percentile_disc
+#----
+# {fred,jill,jim}
+#(1 row)
+#
+#-- check collation propagates up in suitable cases:
+#select pg_collation_for(percentile_disc(1) within group (order by x collate "POSIX"))
+#  from (values ('fred'),('jim')) v(x);
+# pg_collation_for
+#----
+# "POSIX"
+#(1 row)
+#
+#-- ordered-set aggs created with CREATE AGGREGATE
+#select test_rank(3) within group (order by x)
+#from (values (1),(1),(2),(2),(3),(3),(4)) v(x);
+# test_rank
+#-------
+#         5
+#(1 row)
+#
+#select test_percentile_disc(0.5) within group (order by thousand) from tenk1;
+# test_percentile_disc
+#------
+#                  499
+#(1 row)
+#
+#-- ordered-set aggs can't use ungrouped vars in direct args:
+#select rank(x) within group (order by x) from generate_series(1,5) x;
+#ERROR:  column "x.x" must appear in the GROUP BY clause or be used in an aggregate function
+#LINE 1: select rank(x) within group (order by x) from generate_serie...
+#                    ^
+#DETAIL:  Direct arguments of an ordered-set aggregate must use only grouped columns.
+#-- outer-level agg can't use a grouped arg of a lower level, either:
+#select array(select percentile_disc(a) within group (order by x)
+#               from (values (0.3),(0.7)) v(a) group by a)
+#  from generate_series(1,5) g(x);
+#ERROR:  outer-level aggregate cannot contain a lower-level variable in its direct arguments
+#LINE 1: select array(select percentile_disc(a) within group (order b...
+#                                            ^
+#-- agg in the direct args is a grouping violation, too:
+#select rank(sum(x)) within group (order by x) from generate_series(1,5) x;
+#ERROR:  aggregate function calls cannot be nested
+#LINE 1: select rank(sum(x)) within group (order by x) from generate_...
+#                    ^
+#-- hypothetical-set type unification and argument-count failures:
+#select rank(3) within group (order by x) from (values ('fred'),('jim')) v(x);
+#ERROR:  WITHIN GROUP types text and integer cannot be matched
+#LINE 1: select rank(3) within group (order by x) from (values ('fred...
+#                    ^
+#select rank(3) within group (order by stringu1,stringu2) from tenk1;
+#ERROR:  function rank(integer, name, name) does not exist
+#LINE 1: select rank(3) within group (order by stringu1,stringu2) fro...
+#               ^
+#HINT:  To use the hypothetical-set aggregate rank, the number of hypothetical direct arguments (here 1) must match the number of ordering columns (here 2).
+#select rank('fred') within group (order by x) from generate_series(1,5) x;
+#ERROR:  invalid input syntax for type integer: "fred"
+#LINE 1: select rank('fred') within group (order by x) from generate_...
+#                    ^
+#select rank('adam'::text collate "C") within group (order by x collate "POSIX")
+#  from (values ('fred'),('jim')) v(x);
+#ERROR:  collation mismatch between explicit collations "C" and "POSIX"
+#LINE 1: ...adam'::text collate "C") within group (order by x collate "P...
+#                                                             ^
+#-- hypothetical-set type unification successes:
+#select rank('adam'::varchar) within group (order by x) from (values ('fred'),('jim')) v(x);
+# rank
+#----
+#    1
+#(1 row)
+#
+#select rank('3') within group (order by x) from generate_series(1,5) x;
+# rank
+#----
+#    3
+#(1 row)
+#
+#-- divide by zero check
+#select percent_rank(0) within group (order by x) from generate_series(1,0) x;
+# percent_rank
+#----
+#            0
+#(1 row)
+#
+#-- deparse and multiple features:
+#create view aggordview1 as
+#select ten,
+#       percentile_disc(0.5) within group (order by thousand) as p50,
+#       percentile_disc(0.5) within group (order by thousand) filter (where hundred=1) as px,
+#       rank(5,'AZZZZ',50) within group (order by hundred, string4 desc, hundred)
+#  from tenk1
+# group by ten order by ten;
+#select pg_get_viewdef('aggordview1');
+#                                                        pg_get_viewdef
+#-----------
+#  SELECT tenk1.ten,                                                                                                           +
+#     percentile_disc((0.5)::double precision) WITHIN GROUP (ORDER BY tenk1.thousand) AS p50,                                  +
+#     percentile_disc((0.5)::double precision) WITHIN GROUP (ORDER BY tenk1.thousand) FILTER (WHERE (tenk1.hundred = 1)) AS px,+
+#     rank(5, 'AZZZZ'::name, 50) WITHIN GROUP (ORDER BY tenk1.hundred, tenk1.string4 DESC, tenk1.hundred) AS rank              +
+#    FROM tenk1                                                                                                                +
+#   GROUP BY tenk1.ten                                                                                                         +
+#   ORDER BY tenk1.ten;
+#(1 row)
+#
+#select * from aggordview1 order by ten;
+# ten | p50 | px  | rank
+#----+----+----+----
+#   0 | 490 |     |  101
+#   1 | 491 | 401 |  101
+#   2 | 492 |     |  101
+#   3 | 493 |     |  101
+#   4 | 494 |     |  101
+#   5 | 495 |     |   67
+#   6 | 496 |     |    1
+#   7 | 497 |     |    1
+#   8 | 498 |     |    1
+#   9 | 499 |     |    1
+#(10 rows)
+#
+#drop view aggordview1;
+
+# PGDIFF: CRDB does not support variadic aggregates
+# variadic aggregates
+#select least_agg(q1,q2) from int8_tbl;
+#----
+#-4567890123456789
+#
+#select least_agg(variadic array[q1,q2]) from int8_tbl;
+#     least_agg
+#----
+# -4567890123456789
+#(1 row)
+
+# PGDIFF: CRDB does not support user-defined functions
+#-- test aggregates with common transition functions share the same states
+#begin work;
+#create type avg_state as (total bigint, count bigint);
+#create or replace function avg_transfn(state avg_state, n int) returns avg_state as
+#$$
+#declare new_state avg_state;
+#begin
+#	raise notice 'avg_transfn called with %', n;
+#	if state is null then
+#		if n is not null then
+#			new_state.total := n;
+#			new_state.count := 1;
+#			return new_state;
+#		end if;
+#		return null;
+#	elsif n is not null then
+#		state.total := state.total + n;
+#		state.count := state.count + 1;
+#		return state;
+#	end if;
+#
+#	return null;
+#end
+#$$ language plpgsql;
+#create function avg_finalfn(state avg_state) returns int4 as
+#$$
+#begin
+#	if state is null then
+#		return NULL;
+#	else
+#		return state.total / state.count;
+#	end if;
+#end
+#$$ language plpgsql;
+#create function sum_finalfn(state avg_state) returns int4 as
+#$$
+#begin
+#	if state is null then
+#		return NULL;
+#	else
+#		return state.total;
+#	end if;
+#end
+#$$ language plpgsql;
+#create aggregate my_avg(int4)
+#(
+#   stype = avg_state,
+#   sfunc = avg_transfn,
+#   finalfunc = avg_finalfn
+#);
+#create aggregate my_sum(int4)
+#(
+#   stype = avg_state,
+#   sfunc = avg_transfn,
+#   finalfunc = sum_finalfn
+#);
+#-- aggregate state should be shared as aggs are the same.
+#select my_avg(one),my_avg(one) from (values(1),(3)) t(one);
+#NOTICE:  avg_transfn called with 1
+#NOTICE:  avg_transfn called with 3
+# my_avg | my_avg
+#-----+-----
+#      2 |      2
+#(1 row)
+#
+#-- aggregate state should be shared as transfn is the same for both aggs.
+#select my_avg(one),my_sum(one) from (values(1),(3)) t(one);
+#NOTICE:  avg_transfn called with 1
+#NOTICE:  avg_transfn called with 3
+# my_avg | my_sum
+#-----+-----
+#      2 |      4
+#(1 row)
+#
+#-- same as previous one, but with DISTINCT, which requires sorting the input.
+#select my_avg(distinct one),my_sum(distinct one) from (values(1),(3),(1)) t(one);
+#NOTICE:  avg_transfn called with 1
+#NOTICE:  avg_transfn called with 3
+# my_avg | my_sum
+#-----+-----
+#      2 |      4
+#(1 row)
+#
+#-- shouldn't share states due to the distinctness not matching.
+#select my_avg(distinct one),my_sum(one) from (values(1),(3)) t(one);
+#NOTICE:  avg_transfn called with 1
+#NOTICE:  avg_transfn called with 3
+#NOTICE:  avg_transfn called with 1
+#NOTICE:  avg_transfn called with 3
+# my_avg | my_sum
+#-----+-----
+#      2 |      4
+#(1 row)
+#
+#-- shouldn't share states due to the filter clause not matching.
+#select my_avg(one) filter (where one > 1),my_sum(one) from (values(1),(3)) t(one);
+#NOTICE:  avg_transfn called with 1
+#NOTICE:  avg_transfn called with 3
+#NOTICE:  avg_transfn called with 3
+# my_avg | my_sum
+#-----+-----
+#      3 |      4
+#(1 row)
+#
+#-- this should not share the state due to different input columns.
+#select my_avg(one),my_sum(two) from (values(1,2),(3,4)) t(one,two);
+#NOTICE:  avg_transfn called with 1
+#NOTICE:  avg_transfn called with 2
+#NOTICE:  avg_transfn called with 3
+#NOTICE:  avg_transfn called with 4
+# my_avg | my_sum
+#-----+-----
+#      2 |      6
+#(1 row)
+#
+#-- exercise cases where OSAs share state
+#select
+#  percentile_cont(0.5) within group (order by a),
+#  percentile_disc(0.5) within group (order by a)
+#from (values(1::float8),(3),(5),(7)) t(a);
+# percentile_cont | percentile_disc
+#----+----
+#               4 |               3
+#(1 row)
+#
+#select
+#  percentile_cont(0.25) within group (order by a),
+#  percentile_disc(0.5) within group (order by a)
+#from (values(1::float8),(3),(5),(7)) t(a);
+# percentile_cont | percentile_disc
+#----+----
+#             2.5 |               3
+#(1 row)
+#
+#-- these can't share state currently
+#select
+#  rank(4) within group (order by a),
+#  dense_rank(4) within group (order by a)
+#from (values(1),(3),(5),(7)) t(a);
+# rank | dense_rank
+#----+----
+#    3 |          3
+#(1 row)
+#
+#-- test that aggs with the same sfunc and initcond share the same agg state
+#create aggregate my_sum_init(int4)
+#(
+#   stype = avg_state,
+#   sfunc = avg_transfn,
+#   finalfunc = sum_finalfn,
+#   initcond = '(10,0)'
+#);
+#create aggregate my_avg_init(int4)
+#(
+#   stype = avg_state,
+#   sfunc = avg_transfn,
+#   finalfunc = avg_finalfn,
+#   initcond = '(10,0)'
+#);
+#create aggregate my_avg_init2(int4)
+#(
+#   stype = avg_state,
+#   sfunc = avg_transfn,
+#   finalfunc = avg_finalfn,
+#   initcond = '(4,0)'
+#);
+#-- state should be shared if INITCONDs are matching
+#select my_sum_init(one),my_avg_init(one) from (values(1),(3)) t(one);
+#NOTICE:  avg_transfn called with 1
+#NOTICE:  avg_transfn called with 3
+# my_sum_init | my_avg_init
+#----+----
+#          14 |           7
+#(1 row)
+#
+#-- Varying INITCONDs should cause the states not to be shared.
+#select my_sum_init(one),my_avg_init2(one) from (values(1),(3)) t(one);
+#NOTICE:  avg_transfn called with 1
+#NOTICE:  avg_transfn called with 1
+#NOTICE:  avg_transfn called with 3
+#NOTICE:  avg_transfn called with 3
+# my_sum_init | my_avg_init2
+#----+----
+#          14 |            4
+#(1 row)
+#
+#rollback;
+#-- test aggregate state sharing to ensure it works if one aggregate has a
+#-- finalfn and the other one has none.
+#begin work;
+#create or replace function sum_transfn(state int4, n int4) returns int4 as
+#$$
+#declare new_state int4;
+#begin
+#	raise notice 'sum_transfn called with %', n;
+#	if state is null then
+#		if n is not null then
+#			new_state := n;
+#			return new_state;
+#		end if;
+#		return null;
+#	elsif n is not null then
+#		state := state + n;
+#		return state;
+#	end if;
+#
+#	return null;
+#end
+#$$ language plpgsql;
+#create function halfsum_finalfn(state int4) returns int4 as
+#$$
+#begin
+#	if state is null then
+#		return NULL;
+#	else
+#		return state / 2;
+#	end if;
+#end
+#$$ language plpgsql;
+#create aggregate my_sum(int4)
+#(
+#   stype = int4,
+#   sfunc = sum_transfn
+#);
+#create aggregate my_half_sum(int4)
+#(
+#   stype = int4,
+#   sfunc = sum_transfn,
+#   finalfunc = halfsum_finalfn
+#);
+#-- Agg state should be shared even though my_sum has no finalfn
+#select my_sum(one),my_half_sum(one) from (values(1),(2),(3),(4)) t(one);
+#NOTICE:  sum_transfn called with 1
+#NOTICE:  sum_transfn called with 2
+#NOTICE:  sum_transfn called with 3
+#NOTICE:  sum_transfn called with 4
+# my_sum | my_half_sum
+#-----+----
+#     10 |           5
+#(1 row)
+#
+#rollback;
+#-- test that the aggregate transition logic correctly handles
+#-- transition / combine functions returning NULL
+#-- First test the case of a normal transition function returning NULL
+#BEGIN;
+#CREATE FUNCTION balkifnull(int8, int4)
+#RETURNS int8
+#STRICT
+#LANGUAGE plpgsql AS $$
+#BEGIN
+#    IF $1 IS NULL THEN
+#       RAISE 'erroneously called with NULL argument';
+#    END IF;
+#    RETURN NULL;
+#END$$;
+#CREATE AGGREGATE balk(int4)
+#(
+#    SFUNC = balkifnull(int8, int4),
+#    STYPE = int8,
+#    PARALLEL = SAFE,
+#    INITCOND = '0'
+#);
+#SELECT balk(hundred) FROM tenk1;
+# balk
+#----
+#
+#(1 row)
+#
+#ROLLBACK;
+#
+#-- test coverage for aggregate combine/serial/deserial functions
+#BEGIN ISOLATION LEVEL REPEATABLE READ;
+#SET parallel_setup_cost = 0;
+#SET parallel_tuple_cost = 0;
+#SET min_parallel_table_scan_size = 0;
+#SET max_parallel_workers_per_gather = 4;
+#SET enable_indexonlyscan = off;
+#-- variance(int4) covers numeric_poly_combine
+#-- sum(int8) covers int8_avg_combine
+#-- regr_count(float8, float8) covers int8inc_float8_float8 and aggregates with > 1 arg
+#EXPLAIN (COSTS OFF, VERBOSE)
+#  SELECT variance(unique1::int4), sum(unique1::int8), regr_count(unique1::float8, unique1::float8) FROM tenk1;
+#                                                                            QUERY PLAN
+#-----------
+# Finalize Aggregate
+#   Output: variance(unique1), sum((unique1)::bigint), regr_count((unique1)::double precision, (unique1)::double precision)
+#   ->  Gather
+#         Output: (PARTIAL variance(unique1)), (PARTIAL sum((unique1)::bigint)), (PARTIAL regr_count((unique1)::double precision, (unique1)::double precision))
+#         Workers Planned: 4
+#         ->  Partial Aggregate
+#               Output: PARTIAL variance(unique1), PARTIAL sum((unique1)::bigint), PARTIAL regr_count((unique1)::double precision, (unique1)::double precision)
+#               ->  Parallel Seq Scan on public.tenk1
+#                     Output: unique1, unique2, two, four, ten, twenty, hundred, thousand, twothousand, fivethous, tenthous, odd, even, stringu1, stringu2, string4
+#(9 rows)
+#
+#SELECT variance(unique1::int4), sum(unique1::int8), regr_count(unique1::float8, unique1::float8) FROM tenk1;
+#       variance       |   sum    | regr_count
+#------+------+----
+# 8334166.666666666667 | 49995000 |      10000
+#(1 row)
+#
+#ROLLBACK;
+#
+## test coverage for dense_rank
+#SELECT dense_rank(x) WITHIN GROUP (ORDER BY x) FROM (VALUES (1),(1),(2),(2),(3),(3)) v(x) GROUP BY (x) ORDER BY 1;
+#----
+#          1
+#          1
+#          1
+#(3 rows)
+
+# Ensure that the STRICT checks for aggregates does not take NULLness
+# of ORDER BY columns into account. See bug report around
+# 2a505161-2727-2473-7c46-591ed108ac52@email.cz
+query I
+SELECT min(x ORDER BY y) FROM (VALUES(1, NULL)) AS d(x,y);
+----
+1
+
+query I
+SELECT min(x ORDER BY y) FROM (VALUES(1, 2)) AS d(x,y);
+----
+1
+
+# check collation-sensitive matching between grouping expressions
+query TII
+select v||'a', case v||'a' when 'aa' then 1 else 0 end, count(*)
+  from unnest(array['a','b']) u(v)
+ group by v||'a' order by 1;
+----
+aa  1  1
+ba  0  1
+
+query TII
+select v||'a', case when v||'a' = 'aa' then 1 else 0 end, count(*)
+  from unnest(array['a','b']) u(v)
+ group by v||'a' order by 1;
+----
+aa  1  1
+ba  0  1
+
+# Make sure that generation of HashAggregate for uniqification purposes
+# does not lead to array overflow due to unexpected duplicate hash keys
+# see CAFeeJoKKu0u+A_A9R9316djW-YW3-+Gtgvy3ju655qRHR3jtdA@mail.gmail.com
+query I
+select count(*) from tenk1
+ where (hundred, thousand) in (select twothousand, twothousand from onek);
+----
+1000

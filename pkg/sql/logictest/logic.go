@@ -1074,8 +1074,9 @@ func (t *logicTest) setup(cfg testClusterConfig) {
 					OptimizerCostPerturbation:       *optimizerCostPerturbation,
 				},
 			},
-			ClusterName: "testclustername",
-			UseDatabase: "test",
+			ClusterName:   "testclustername",
+			UseDatabase:   "test",
+			ExternalIODir: "testdata/logic_test/",
 		},
 		// For distributed SQL tests, we use the fake span resolver; it doesn't
 		// matter where the data really is.
