@@ -2,11 +2,8 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "diagnosticspb",
-    srcs = [
-        "diagnostics.go",
-        "diagnostics.pb.go",
-    ],
-    importpath = "github.com/cockroachdb/cockroach/pkg/server/diagnosticspb",
+    srcs = ["diagnostics.pb.go"],
+    importpath = "github.com/cockroachdb/cockroach/pkg/server/diagnostics/diagnosticspb",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/base",
@@ -14,8 +11,6 @@ go_library(
         "//pkg/config/zonepb",
         "//pkg/roachpb",
         "//pkg/sql/catalog/descpb",
-        "//pkg/util/envutil",
-        "//pkg/util/uuid",
         "@com_github_gogo_protobuf//proto",
         "@com_github_gogo_protobuf//sortkeys",
     ],

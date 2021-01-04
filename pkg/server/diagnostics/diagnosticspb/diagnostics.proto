@@ -9,7 +9,7 @@
 // licenses/APL.txt.
 
 syntax = "proto3";
-package cockroach.server.diagnosticspb;
+package cockroach.server.diagnostics.diagnosticspb;
 option go_package = "diagnosticspb";
 
 import "build/info.proto";

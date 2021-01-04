@@ -26,7 +26,6 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/security"
 	"github.com/cockroachdb/cockroach/pkg/server"
 	"github.com/cockroachdb/cockroach/pkg/server/diagnostics"
-	"github.com/cockroachdb/cockroach/pkg/server/diagnosticspb"
 	"github.com/cockroachdb/cockroach/pkg/sql"
 	"github.com/cockroachdb/cockroach/pkg/sql/catalog/catconstants"
 	"github.com/cockroachdb/cockroach/pkg/sql/catalog/descpb"
@@ -136,7 +135,7 @@ func (tt *telemetryTest) Start(t *testing.T) {
 	params := base.TestServerArgs{
 		Knobs: base.TestingKnobs{
 			Server: &server.TestingKnobs{
-				DiagnosticsTestingKnobs: diagnosticspb.TestingKnobs{
+				DiagnosticsTestingKnobs: diagnostics.TestingKnobs{
 					OverrideReportingURL: &diagSrvURL,
 				},
 			},

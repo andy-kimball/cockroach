@@ -26,7 +26,6 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/security"
 	"github.com/cockroachdb/cockroach/pkg/server"
 	"github.com/cockroachdb/cockroach/pkg/server/diagnostics"
-	"github.com/cockroachdb/cockroach/pkg/server/diagnosticspb"
 	"github.com/cockroachdb/cockroach/pkg/server/telemetry"
 	"github.com/cockroachdb/cockroach/pkg/settings/cluster"
 	"github.com/cockroachdb/cockroach/pkg/sql"
@@ -136,7 +135,7 @@ func TestServerReport(t *testing.T) {
 		node := rt.server.MetricsRecorder().GenerateNodeStatus(ctx)
 		// Clear the SQL stat pool before getting diagnostics.
 		rt.server.SQLServer().(*sql.Server).ResetSQLStats(ctx)
-		rt.server.ReportDiagnostics(ctx)
+		rt.server.DiagnosticsReporter().(*diagnostics.Reporter).ReportDiagnostics(ctx)
 
 		keyCounts := make(map[roachpb.StoreID]int64)
 		rangeCounts := make(map[roachpb.StoreID]int64)
@@ -340,7 +339,7 @@ func startReporterTest(t *testing.T) *reporterTest {
 			DisableDeleteOrphanedLeases: true,
 		},
 		Server: &server.TestingKnobs{
-			DiagnosticsTestingKnobs: diagnosticspb.TestingKnobs{
+			DiagnosticsTestingKnobs: diagnostics.TestingKnobs{
 				OverrideReportingURL: &url,
 			},
 		},

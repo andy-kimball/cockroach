@@ -105,6 +105,7 @@ type SQLServer struct {
 	sqlLivenessProvider     sqlliveness.Provider
 	metricsRegistry         *metric.Registry
 	diagnosticsReporter     *diagnostics.Reporter
+	updatesChecker          *diagnostics.UpdateChecker
 
 	// pgL is the shared RPC/SQL listener, opened when RPC was initialized.
 	pgL net.Listener
@@ -643,25 +644,22 @@ func newSQLServer(ctx context.Context, cfg sqlServerArgs) (*SQLServer, error) {
 		leaseMgr,
 	)
 
-	var reporter *diagnostics.Reporter
-	if cfg.tenantConnect != nil {
-		reporter = &diagnostics.Reporter{
-			StartTime:     timeutil.Now(),
-			AmbientCtx:    &cfg.AmbientCtx,
-			Config:        cfg.BaseConfig.Config,
-			Settings:      cfg.Settings,
-			ClusterID:     cfg.rpcContext.ClusterID.Get,
-			TenantID:      cfg.rpcContext.TenantID,
-			SQLInstanceID: cfg.nodeIDContainer.SQLInstanceID,
-			SQLServer:     pgServer.SQLServer,
-			InternalExec:  cfg.circularInternalExecutor,
-			DB:            cfg.db,
-			Recorder:      cfg.recorder,
-			Locality:      cfg.Locality,
-		}
-		if cfg.TestingKnobs.Server != nil {
-			reporter.TestingKnobs = &cfg.TestingKnobs.Server.(*TestingKnobs).DiagnosticsTestingKnobs
-		}
+	reporter := &diagnostics.Reporter{
+		StartTime:     timeutil.Now(),
+		AmbientCtx:    &cfg.AmbientCtx,
+		Config:        cfg.BaseConfig.Config,
+		Settings:      cfg.Settings,
+		ClusterID:     cfg.rpcContext.ClusterID.Get,
+		TenantID:      cfg.rpcContext.TenantID,
+		SQLInstanceID: cfg.nodeIDContainer.SQLInstanceID,
+		SQLServer:     pgServer.SQLServer,
+		InternalExec:  cfg.circularInternalExecutor,
+		DB:            cfg.db,
+		Recorder:      cfg.recorder,
+		Locality:      cfg.Locality,
+	}
+	if cfg.TestingKnobs.Server != nil {
+		reporter.TestingKnobs = &cfg.TestingKnobs.Server.(*TestingKnobs).DiagnosticsTestingKnobs
 	}
 
 	return &SQLServer{

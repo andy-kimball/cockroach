@@ -645,7 +645,7 @@ func (ts *TestServer) StartTenant(
 	if stopper == nil {
 		stopper = ts.Stopper()
 	}
-	sqlServer, addr, httpAddr, _, err := StartTenant(
+	sqlServer, addr, httpAddr, err := StartTenant(
 		ctx,
 		stopper,
 		ts.Cfg.ClusterName,
@@ -662,14 +662,14 @@ func StartTenant(
 	kvClusterName string, // NB: gone after https://github.com/cockroachdb/cockroach/issues/42519
 	baseCfg BaseConfig,
 	sqlCfg SQLConfig,
-) (sqlServer *SQLServer, pgAddr string, httpAddr string, instanceID base.SQLInstanceID, _ error) {
+) (sqlServer *SQLServer, pgAddr string, httpAddr string, _ error) {
 	args, err := makeSQLServerArgs(stopper, kvClusterName, baseCfg, sqlCfg)
 	if err != nil {
-		return nil, "", "", 0, err
+		return nil, "", "", err
 	}
 	s, err := newSQLServer(ctx, args)
 	if err != nil {
-		return nil, "", "", 0, err
+		return nil, "", "", err
 	}
 
 	// TODO(asubiotto): remove this. Right now it is needed to initialize the
@@ -686,7 +686,7 @@ func StartTenant(
 
 	pgL, err := listen(ctx, &args.Config.SQLAddr, &args.Config.SQLAdvertiseAddr, "sql")
 	if err != nil {
-		return nil, "", "", 0, err
+		return nil, "", "", err
 	}
 
 	args.stopper.RunWorker(ctx, func(ctx context.Context) {
@@ -700,7 +700,7 @@ func StartTenant(
 
 	httpL, err := listen(ctx, &args.Config.HTTPAddr, &args.Config.HTTPAdvertiseAddr, "http")
 	if err != nil {
-		return nil, "", "", 0, err
+		return nil, "", "", err
 	}
 
 	args.stopper.RunWorker(ctx, func(ctx context.Context) {
@@ -750,7 +750,7 @@ func StartTenant(
 		heapProfileDirName:   args.HeapProfileDirName,
 		runtime:              args.runtime,
 	}); err != nil {
-		return nil, "", "", 0, err
+		return nil, "", "", err
 	}
 
 	s.execCfg.DistSQLPlanner.SetNodeInfo(roachpb.NodeDescriptor{NodeID: roachpb.NodeID(args.nodeIDContainer.SQLInstanceID())})
@@ -763,7 +763,7 @@ func StartTenant(
 		socketFile,
 		orphanedLeasesTimeThresholdNanos,
 	); err != nil {
-		return nil, "", "", 0, err
+		return nil, "", "", err
 	}
 
 	if err := s.startServeSQL(ctx,
@@ -771,10 +771,10 @@ func StartTenant(
 		s.connManager,
 		s.pgL,
 		socketFile); err != nil {
-		return nil, "", "", 0, err
+		return nil, "", "", err
 	}
 
-	return s, pgLAddr, httpLAddr, args.nodeIDContainer.SQLInstanceID(), nil
+	return s, pgLAddr, httpLAddr, nil
 }
 
 // ExpectedInitialRangeCount returns the expected number of ranges that should
@@ -881,6 +881,16 @@ func (ts *TestServer) AdminURL() string {
 // GetHTTPClient implements TestServerInterface.
 func (ts *TestServer) GetHTTPClient() (http.Client, error) {
 	return ts.Server.rpcContext.GetHTTPClient()
+}
+
+// UpdateChecker implements TestServerInterface.
+func (ts *TestServer) UpdateChecker() interface{} {
+	return ts.Server.updates
+}
+
+// DiagnosticsReporter implements TestServerInterface.
+func (ts *TestServer) DiagnosticsReporter() interface{} {
+	return ts.Server.sqlServer.diagnosticsReporter
 }
 
 const authenticatedUser = "authentic_user"

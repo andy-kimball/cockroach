@@ -8,14 +8,17 @@
 // by the Apache License, Version 2.0, included in the file
 // licenses/APL.txt.
 
-package diagnosticspb
+package diagnostics
 
 import (
+	"math/rand"
 	"net/url"
 	"strconv"
+	"time"
 
 	"github.com/cockroachdb/cockroach/pkg/build"
 	"github.com/cockroachdb/cockroach/pkg/roachpb"
+	"github.com/cockroachdb/cockroach/pkg/server/diagnostics/diagnosticspb"
 	"github.com/cockroachdb/cockroach/pkg/util/envutil"
 	"github.com/cockroachdb/cockroach/pkg/util/uuid"
 )
@@ -50,6 +53,11 @@ func init() {
 
 // TestingKnobs groups testing knobs for diagnostics.
 type TestingKnobs struct {
+	// DisablePeriodicDiagnostics, if true, causes server/tenant initialization
+	// to not call PeriodicallyReportDiagnostics or PeriodicallyCheckForUpdates
+	// during startup.
+	NoPeriodicDiagnostics bool
+
 	// OverrideUpdatesURL if set, overrides the URL used to check for new
 	// versions. It is a pointer to pointer to allow overriding to the nil URL.
 	OverrideUpdatesURL **url.URL
@@ -67,33 +75,14 @@ type ClusterInfo struct {
 	IsInternal bool
 }
 
-// BuildUpdatesURL creates a URL to check for version updates.
-// If an empty updates URL is set (via empty environment variable), returns nil.
-func BuildUpdatesURL(clusterInfo *ClusterInfo, nodeInfo *NodeInfo, knobs *TestingKnobs) *url.URL {
-	url := updatesURL
-	if knobs != nil && knobs.OverrideUpdatesURL != nil {
-		url = *knobs.OverrideUpdatesURL
-	}
-	return addInfoToURL(url, clusterInfo, nodeInfo, &SQLInstanceInfo{})
-}
-
-// BuildReportingURL creates a URL to report diagnostics. If this is a CRDB
-// node, then nodeInfo is filled (and nodeInfo.NodeID is non-zero). Otherwise,
-// this is a SQL-only tenant and sqlInfo is filled.
-//
-// If an empty updates URL is set (via empty environment variable), returns nil.
-func BuildReportingURL(
-	clusterInfo *ClusterInfo, nodeInfo *NodeInfo, sqlInfo *SQLInstanceInfo, knobs *TestingKnobs,
-) *url.URL {
-	url := reportingURL
-	if knobs != nil && knobs.OverrideReportingURL != nil {
-		url = *knobs.OverrideReportingURL
-	}
-	return addInfoToURL(url, clusterInfo, nodeInfo, sqlInfo)
-}
-
+// addInfoToURL sets query parameters on the URL used to report diagnostics. If
+// this is a CRDB node, then nodeInfo is filled (and nodeInfo.NodeID is
+// non-zero). Otherwise, this is a SQL-only tenant and sqlInfo is filled.
 func addInfoToURL(
-	url *url.URL, clusterInfo *ClusterInfo, nodeInfo *NodeInfo, sqlInfo *SQLInstanceInfo,
+	url *url.URL,
+	clusterInfo *ClusterInfo,
+	nodeInfo *diagnosticspb.NodeInfo,
+	sqlInfo *diagnosticspb.SQLInstanceInfo,
 ) *url.URL {
 	if url == nil {
 		return nil
@@ -125,4 +114,11 @@ func addInfoToURL(
 	q.Set("envchannel", b.EnvChannel)
 	result.RawQuery = q.Encode()
 	return &result
+}
+
+// randomly shift `d` to be up to `jitterSeconds` shorter or longer.
+func addJitter(d time.Duration) time.Duration {
+	const jitterSeconds = 120
+	j := time.Duration(rand.Intn(jitterSeconds*2)-jitterSeconds) * time.Second
+	return d + j
 }

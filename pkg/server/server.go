@@ -52,6 +52,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/rpc/nodedialer"
 	"github.com/cockroachdb/cockroach/pkg/security"
 	"github.com/cockroachdb/cockroach/pkg/server/debug"
+	"github.com/cockroachdb/cockroach/pkg/server/diagnostics"
 	"github.com/cockroachdb/cockroach/pkg/server/goroutinedumper"
 	"github.com/cockroachdb/cockroach/pkg/server/heapprofiler"
 	"github.com/cockroachdb/cockroach/pkg/server/serverpb"
@@ -140,6 +141,7 @@ type Server struct {
 	registry     *metric.Registry
 	recorder     *status.MetricsRecorder
 	runtime      *status.RuntimeStatSampler
+	updates      *diagnostics.UpdateChecker
 
 	admin           *adminServer
 	status          *statusServer
@@ -549,6 +551,18 @@ func NewServer(cfg Config, stopper *stop.Stopper) (*Server, error) {
 	recorder := status.NewMetricsRecorder(clock, nodeLiveness, rpcContext, g, st)
 	registry.AddMetricStruct(rpcContext.RemoteClocks.Metrics())
 
+	updates := &diagnostics.UpdateChecker{
+		StartTime:  timeutil.Now(),
+		AmbientCtx: &cfg.AmbientCtx,
+		Config:     cfg.BaseConfig.Config,
+		Settings:   cfg.Settings,
+		NodeID:     nodeIDContainer.Get,
+		ClusterID:  rpcContext.ClusterID.Get,
+	}
+	if cfg.TestingKnobs.Server != nil {
+		updates.TestingKnobs = &cfg.TestingKnobs.Server.(*TestingKnobs).DiagnosticsTestingKnobs
+	}
+
 	node := NewNode(
 		storeCfg, recorder, registry, stopper,
 		txnMetrics, nil /* execCfg */, &rpcContext.ClusterID)
@@ -666,6 +680,7 @@ func NewServer(cfg Config, stopper *stop.Stopper) (*Server, error) {
 		node:                   node,
 		registry:               registry,
 		recorder:               recorder,
+		updates:                updates,
 		runtime:                runtimeSampler,
 		admin:                  sAdmin,
 		status:                 sStatus,
@@ -2268,6 +2283,14 @@ func (s *Server) TempDir() string {
 // PGServer exports the pgwire server. Used by tests.
 func (s *Server) PGServer() *pgwire.Server {
 	return s.sqlServer.pgServer
+}
+
+// StartDiagnostics starts periodic diagnostics reporting and update checking.
+// NOTE: This is not called in PreStart so that it's disable by default for
+// testing.
+func (s *Server) StartDiagnostics(ctx context.Context) {
+	s.updates.PeriodicallyCheckForUpdates(ctx, s.stopper)
+	s.sqlServer.StartDiagnostics(ctx)
 }
 
 // TODO(benesch): Use https://github.com/NYTimes/gziphandler instead.
