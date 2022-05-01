@@ -1,14 +1,8 @@
-// Copyright 2021 The Cockroach Authors.
-//
-// Licensed as a CockroachDB Enterprise file under the Cockroach Community
-// License (the "License"); you may not use this file except in compliance with
-// the License. You may obtain a copy of the License at
-//
-//     https://github.com/cockroachdb/cockroach/blob/master/licenses/CCL.txt
-
 package tenantcostclient
 
 import (
+	"context"
+	"flag"
 	"fmt"
 	"io"
 	"math/rand"
@@ -18,11 +12,16 @@ import (
 
 	"github.com/cockroachdb/cockroach/pkg/multitenant/tenantcostmodel"
 	"github.com/cockroachdb/cockroach/pkg/util/leaktest"
-	"github.com/cockroachdb/cockroach/pkg/util/randutil"
+	"github.com/cockroachdb/cockroach/pkg/util/quotapool"
 	"github.com/cockroachdb/cockroach/pkg/util/timeutil"
 )
 
-func TestTokenBucket(t *testing.T) {
+var saveDebtCSV = flag.String(
+	"save-debt-csv", "",
+	"save latency data from TestTokenBucketDebt to a csv file",
+)
+
+func TestLimiter(t *testing.T) {
 	defer leaktest.AfterTest(t)()
 
 	start := timeutil.Now()
@@ -170,86 +169,19 @@ func TestTokenBucket(t *testing.T) {
 	check("62.00 RU filling @ 1.00 RU/s (avg 15.47 RU/op)")
 }
 
-// TestTokenBucketTryToFulfill verifies that the tryAgainAfter time returned by
-// TryToFulfill is consistent if recalculated after some time has passed.
-func TestTokenBucketTryToFulfill(t *testing.T) {
-	defer leaktest.AfterTest(t)()
-
-	r, _ := randutil.NewPseudoRand()
-	randRU := func(min, max float64) tenantcostmodel.RU {
-		return tenantcostmodel.RU(min + r.Float64()*(max-min))
-	}
-	randDuration := func(max time.Duration) time.Duration {
-		return time.Duration(r.Intn(int(max + 1)))
-	}
-
-	start := timeutil.Now()
-	const runs = 50000
-	for run := 0; run < runs; run++ {
-		var tb tokenBucket
-		clock := timeutil.NewManualTime(start)
-		tb.Init(clock.Now(), nil, randRU(1, 100), randRU(0, 500))
-
-		// Advance a random amount of time.
-		clock.Advance(randDuration(100 * time.Millisecond))
-
-		if rand.Intn(5) > 0 {
-			// Add some debt and advance more.
-			tb.RemoveTokens(clock.Now(), randRU(1, 500))
-			clock.Advance(randDuration(100 * time.Millisecond))
-		}
-
-		// Fulfill requests until we can't anymore.
-		var ru tenantcostmodel.RU
-		var tryAgainAfter time.Duration
-		for {
-			ru = randRU(0, 100)
-			var ok bool
-			ok, tryAgainAfter = tb.TryToFulfill(clock.Now())
-			if !ok {
-				break
-			}
-			tb.RemoveTokens(clock.Now(), ru)
-		}
-		if tryAgainAfter == maxTryAgainAfterSeconds*time.Second {
-			// TryToFullfill has a cap; we cannot crosscheck the value if that cap is
-			// hit.
-			continue
-		}
-		state := tb
-		// Now check that if we advance the time a bit, the tryAgainAfter time
-		// agrees with the previous one.
-		advance := randDuration(tryAgainAfter)
-		clock.Advance(advance)
-		ok, newTryAgainAfter := tb.TryToFulfill(clock.Now())
-		if ok {
-			newTryAgainAfter = 0
-		}
-		tb.RemoveTokens(clock.Now(), ru)
-		// Check that the two calls agree on when the request can go through.
-		diff := advance + newTryAgainAfter - tryAgainAfter
-		const tolerance = 10 * time.Nanosecond
-		if diff < -tolerance || diff > tolerance {
-			t.Fatalf(
-				"inconsistent tryAgainAfter\nstate: %+v\nru: %f\ntryAgainAfter: %s\ntryAgainAfter after %s: %s",
-				state, ru, tryAgainAfter, advance, newTryAgainAfter,
-			)
-		}
-	}
-}
-
 // TestTokenBucketDebt simulates a closed-loop workload with parallelism 1 in
 // combination with incurring a fixed amount of debt every second. It verifies
 // that queue times are never too high, and optionally emits all queue time
 // information into a csv file.
-func TestTokenBucketDebt(t *testing.T) {
+func TestLimiterDebt(t *testing.T) {
 	defer leaktest.AfterTest(t)()
 
 	start := timeutil.Now()
 	ts := timeutil.NewManualTime(start)
 
-	var tb tokenBucket
-	tb.Init(ts.Now(), nil, 100 /* rate */, 0 /* available */)
+	var lim limiter
+	lim.Init(ts, nil /* notifyChan */)
+	lim.Reconfigure(limiterReconfigureArgs{NewRate: 100})
 
 	const tickDuration = time.Millisecond
 	const debtPeriod = time.Second
@@ -257,7 +189,7 @@ func TestTokenBucketDebt(t *testing.T) {
 	const totalTicks = 10 * debtTicks
 	const debt tenantcostmodel.RU = 50
 
-	const reqRUMean = 1.0
+	const reqRUMean = 2.0
 	const reqRUStdDev = reqRUMean / 2.0
 
 	// Use a fixed seed so the result is reproducible.
@@ -269,9 +201,6 @@ func TestTokenBucketDebt(t *testing.T) {
 		}
 		return tenantcostmodel.RU(ru)
 	}
-
-	ru := randRu()
-	reqTick := 0
 
 	out := io.Discard
 	if *saveDebtCSV != "" {
@@ -287,28 +216,52 @@ func TestTokenBucketDebt(t *testing.T) {
 		out = file
 	}
 
-	fmt.Fprintf(out, "time (s),queue latency (ms),debt applied (RU)\n")
+	var req *waitRequest
+	reqTick := 0
+	opsCount := 0
+	ctx := context.Background()
+
+	fmt.Fprintf(out, "time (s), RUs requested, queue latency (ms), debt applied (RU), available RUs, extra RUs\n")
 	for tick := 0; tick < totalTicks; tick++ {
-		now := ts.Now()
 		var d tenantcostmodel.RU
 		if tick > 0 && tick%debtTicks == 0 {
 			d = debt
-			tb.RemoveTokens(now, debt)
+			lim.OnTick(d)
+			opsCount = 0
 		}
-		if ok, _ := tb.TryToFulfill(now); ok {
-			tb.RemoveTokens(now, ru)
-			latency := tick - reqTick
-			if latency > 100 {
-				// A single request took longer than 100ms; we did a poor job smoothing
-				// out the debt.
-				t.Fatalf("high latency for request: %d ms", latency)
+
+		if req != nil {
+			if tenantcostmodel.RU(req.needed) <= lim.AvailableRU() {
+				// This should not block, since we checked above there are enough
+				// tokens.
+				if err := lim.qp.Acquire(ctx, req); err != nil {
+					t.Fatalf("error during Acquire: %v", err)
+				}
+
+				opsCount++
+				latency := tick - reqTick
+				if latency > 100 {
+					// A single request took longer than 100ms; we did a poor job smoothing
+					// out the debt.
+					t.Fatalf("high latency for request: %d ms", latency)
+				}
+				fmt.Fprintf(out, "%8.3f,%14.2f,%19d,%18.1f,%14.2f,%10.2f\n",
+					(time.Duration(tick) * tickDuration).Seconds(),
+					req.needed, latency, d, lim.AvailableRU(), lim.extraUsage())
+
+				req = nil
+			} else {
+				fmt.Fprintf(out, "%8.3f,              ,                   ,%18.1f,%14.2f,%10.2f\n",
+					(time.Duration(tick) * tickDuration).Seconds(), d, lim.AvailableRU(), lim.extraUsage())
 			}
-			fmt.Fprintf(out, "%.3f,%3d, %.1f\n", (time.Duration(tick) * tickDuration).Seconds(), latency, d)
-			ru = randRu()
-			reqTick = tick
-		} else {
-			fmt.Fprintf(out, "%.3f,   , %.1f\n", (time.Duration(tick) * tickDuration).Seconds(), d)
 		}
+
+		if req == nil {
+			// Create a request now.
+			req = &waitRequest{needed: quotapool.Tokens(lim.amortizeExtraRU(randRu()))}
+			reqTick = tick
+		}
+
 		ts.Advance(tickDuration)
 	}
 }

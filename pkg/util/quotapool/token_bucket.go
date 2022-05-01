@@ -11,6 +11,7 @@
 package quotapool
 
 import (
+	"math"
 	"time"
 
 	"github.com/cockroachdb/cockroach/pkg/util/timeutil"
@@ -57,10 +58,24 @@ func (tb *TokenBucket) update() {
 		tb.current += Tokens(float64(tb.rate) * since.Seconds())
 
 		if tb.current > tb.burst {
+			if tb.burst == math.MaxFloat64 {
+				tb.current = tb.burst
+			}
 			tb.current = tb.burst
 		}
 		tb.lastUpdated = now
 	}
+}
+
+// Current returns the number of tokens that are currently available in the
+// bucket. This can be negative if the bucket is in debt.
+func (tb *TokenBucket) Current() Tokens {
+	tb.update()
+	return tb.current
+}
+
+func (tb *TokenBucket) Rate() TokensPerSecond {
+	return tb.rate
 }
 
 // UpdateConfig updates the rate and burst limits. The change in burst will be

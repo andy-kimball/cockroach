@@ -120,7 +120,7 @@ type RequestInfo struct {
 }
 
 // MakeRequestInfo extracts the relevant information from a BatchRequest.
-func MakeRequestInfo(ba *roachpb.BatchRequest) RequestInfo {
+func MakeRequestInfo(ba *roachpb.BatchRequest, numReplicas int) RequestInfo {
 	// The cost of read-only batches is captured by MakeResponseInfo.
 	if !ba.IsWrite() {
 		return RequestInfo{writeCount: -1}
@@ -136,9 +136,9 @@ func MakeRequestInfo(ba *roachpb.BatchRequest) RequestInfo {
 		case *roachpb.PutRequest, *roachpb.ConditionalPutRequest, *roachpb.IncrementRequest,
 			*roachpb.DeleteRequest, *roachpb.DeleteRangeRequest, *roachpb.ClearRangeRequest,
 			*roachpb.RevertRangeRequest, *roachpb.InitPutRequest, *roachpb.AddSSTableRequest:
-			writeCount++
+			writeCount += int64(numReplicas)
 			if swr, isSizedWrite := req.(roachpb.SizedWriteRequest); isSizedWrite {
-				writeBytes += swr.WriteBytes()
+				writeBytes += swr.WriteBytes() * int64(numReplicas)
 			}
 		}
 	}
