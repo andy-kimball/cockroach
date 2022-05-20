@@ -729,34 +729,34 @@ var charts = []sectionDescription{
 	},
 	{
 		Organization: [][]string{{KVTransactionLayer, "Clocks"}}, Charts: []chartDescription{
-			{
-				Title:   "Roundtrip Latency",
-				Metrics: []string{"round-trip-latency"},
-			},
+		{
+			Title:   "Roundtrip Latency",
+			Metrics: []string{"round-trip-latency"},
 		},
+	},
 	},
 	{
 		Organization: [][]string{{KVTransactionLayer, "Prober"}}, Charts: []chartDescription{
-			{
-				Title: "Availability",
-				Metrics: []string{
-					"kv.prober.planning_attempts",
-					"kv.prober.planning_failures",
-					"kv.prober.read.attempts",
-					"kv.prober.read.failures",
-					"kv.prober.write.attempts",
-					"kv.prober.write.failures",
-				},
-				AxisLabel: "Probes",
+		{
+			Title: "Availability",
+			Metrics: []string{
+				"kv.prober.planning_attempts",
+				"kv.prober.planning_failures",
+				"kv.prober.read.attempts",
+				"kv.prober.read.failures",
+				"kv.prober.write.attempts",
+				"kv.prober.write.failures",
 			},
-			{
-				Title: "Latency",
-				Metrics: []string{
-					"kv.prober.read.latency",
-					"kv.prober.write.latency",
-				},
+			AxisLabel: "Probes",
+		},
+		{
+			Title: "Latency",
+			Metrics: []string{
+				"kv.prober.read.latency",
+				"kv.prober.write.latency",
 			},
 		},
+	},
 	},
 	{
 		Organization: [][]string{
@@ -956,16 +956,16 @@ var charts = []sectionDescription{
 				Metrics:     []string{"kv.tenant_rate_limit.write_requests_admitted"},
 			},
 			{
-				Title:       "Write Bytes Admitted by Rate Limiter",
-				Downsampler: DescribeAggregator_MAX,
-				Percentiles: false,
-				Metrics:     []string{"kv.tenant_rate_limit.write_bytes_admitted"},
-			},
-			{
 				Title:       "Read Bytes Admitted by Rate Limiter",
 				Downsampler: DescribeAggregator_MAX,
 				Percentiles: false,
 				Metrics:     []string{"kv.tenant_rate_limit.read_bytes_admitted"},
+			},
+			{
+				Title:       "Write Bytes Admitted by Rate Limiter",
+				Downsampler: DescribeAggregator_MAX,
+				Percentiles: false,
+				Metrics:     []string{"kv.tenant_rate_limit.write_bytes_admitted"},
 			},
 		},
 	},
@@ -3206,6 +3206,19 @@ var charts = []sectionDescription{
 				Metrics: []string{
 					"admission.granter.io_tokens_exhausted_duration.kv",
 				},
+			},
+		},
+	},
+	{
+		Organization: [][]string{{ReplicationLayer, "Latency"}},
+		Charts: []chartDescription{
+			{
+				Title:   "Execution duration for read batch evaluation.",
+				Metrics: []string{"kv.replica_read_batch_evaluate.latency"},
+			},
+			{
+				Title:   "Execution duration for read batch evaluation.",
+				Metrics: []string{"kv.replica_write_batch_evaluate.latency"},
 			},
 		},
 	},
