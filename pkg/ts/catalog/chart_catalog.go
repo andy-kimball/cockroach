@@ -729,34 +729,34 @@ var charts = []sectionDescription{
 	},
 	{
 		Organization: [][]string{{KVTransactionLayer, "Clocks"}}, Charts: []chartDescription{
-		{
-			Title:   "Roundtrip Latency",
-			Metrics: []string{"round-trip-latency"},
+			{
+				Title:   "Roundtrip Latency",
+				Metrics: []string{"round-trip-latency"},
+			},
 		},
-	},
 	},
 	{
 		Organization: [][]string{{KVTransactionLayer, "Prober"}}, Charts: []chartDescription{
-		{
-			Title: "Availability",
-			Metrics: []string{
-				"kv.prober.planning_attempts",
-				"kv.prober.planning_failures",
-				"kv.prober.read.attempts",
-				"kv.prober.read.failures",
-				"kv.prober.write.attempts",
-				"kv.prober.write.failures",
+			{
+				Title: "Availability",
+				Metrics: []string{
+					"kv.prober.planning_attempts",
+					"kv.prober.planning_failures",
+					"kv.prober.read.attempts",
+					"kv.prober.read.failures",
+					"kv.prober.write.attempts",
+					"kv.prober.write.failures",
+				},
+				AxisLabel: "Probes",
 			},
-			AxisLabel: "Probes",
-		},
-		{
-			Title: "Latency",
-			Metrics: []string{
-				"kv.prober.read.latency",
-				"kv.prober.write.latency",
+			{
+				Title: "Latency",
+				Metrics: []string{
+					"kv.prober.read.latency",
+					"kv.prober.write.latency",
+				},
 			},
 		},
-	},
 	},
 	{
 		Organization: [][]string{
