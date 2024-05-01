@@ -91,6 +91,7 @@ type kv struct {
 	scatter                              bool
 	secondaryIndex                       bool
 	shards                               int
+	numTables                            int
 	targetCompressionRatio               float64
 	enum                                 bool
 	keySize                              int
@@ -166,6 +167,8 @@ var kvMeta = workload.Meta{
 			`Add a secondary index to the schema.`)
 		g.flags.IntVar(&g.shards, `num-shards`, 0,
 			`Number of shards to create on the primary key.`)
+		g.flags.IntVar(&g.numTables, `num-tables`, 1,
+			`Number of kv tables to distribute operations across.`)
 		g.flags.Float64Var(&g.targetCompressionRatio, `target-compression-ratio`, 1.0,
 			`Target compression ratio for data blocks. Must be >= 1.0.`)
 		g.flags.BoolVar(&g.enum, `enum`, false,
@@ -357,79 +360,91 @@ func insertCountKey(idx, count int64, kr keyRange) int64 {
 
 // Tables implements the Generator interface.
 func (w *kv) Tables() []workload.Table {
-	// Tables should only run on initialized workload, safe to call create without
-	// having a panic. We don't need to defer this to the actual table callbacks
-	// like Splits or InitialRows.
-	_, _, kt, kr := w.createKeyGenerator()
+	tables := make([]workload.Table, 0, w.numTables)
+	for i := 0; i < w.numTables; i++ {
+		// Tables should only run on initialized workload, safe to call create without
+		// having a panic. We don't need to defer this to the actual table callbacks
+		// like Splits or InitialRows.
+		_, _, kt, kr := w.createKeyGenerator()
 
-	table := workload.Table{Name: `kv`}
-	table.Splits = workload.Tuples(
-		w.splits,
-		func(splitIdx int) []interface{} {
-			return []interface{}{splitFinder(splitIdx, w.splits, kr, kt)}
-		},
-	)
-
-	if w.shards > 0 {
-		schema := shardedKvSchema
-		if w.secondaryIndex {
-			schema = shardedKvSchemaWithIndex
+<<<<<<< Updated upstream
+		table := workload.Table{Name: fmt.Sprintf("kv%d", i)}
+=======
+		name := "kv"
+		if w.numTables > 1 {
+			name = fmt.Sprintf("kv%d", i)
 		}
-		table.Schema = fmt.Sprintf(schema, kt.keySQLType(), w.shards)
-	} else {
-		schema := kvSchema
-		if w.secondaryIndex {
-			schema = kvSchemaWithIndex
-		}
-		table.Schema = fmt.Sprintf(schema, kt.keySQLType())
-	}
-
-	if w.insertCount > 0 {
-		const batchSize = 1000
-		table.InitialRows = workload.BatchedTuples{
-			NumBatches: (w.insertCount + batchSize - 1) / batchSize,
-			FillBatch: func(batchIdx int, cb coldata.Batch, a *bufalloc.ByteAllocator) {
-				rowBegin, rowEnd := batchIdx*batchSize, (batchIdx+1)*batchSize
-				if rowEnd > w.insertCount {
-					rowEnd = w.insertCount
-				}
-
-				var kvtableTypes = []*types.T{
-					kt.getColumnType(),
-					types.Bytes,
-				}
-
-				cb.Reset(kvtableTypes, rowEnd-rowBegin, coldata.StandardColumnFactory)
-
-				{
-					seq := rowBegin
-					kt.fillColumnBatch(cb, a, func() (s int64, ok bool) {
-						if seq < rowEnd {
-							seq++
-							return insertCountKey(int64(seq-1), int64(w.insertCount), kr), true
-						}
-						return 0, false
-					})
-				}
-
-				valCol := cb.ColVec(1).Bytes()
-				// coldata.Bytes only allows appends so we have to reset it.
-				valCol.Reset()
-				rndBlock := rand.New(rand.NewSource(RandomSeed.Seed()))
-
-				for rowIdx := rowBegin; rowIdx < rowEnd; rowIdx++ {
-					rowOffset := rowIdx - rowBegin
-					var payload []byte
-					blockSize, uniqueSize := w.randBlockSize(rndBlock)
-					*a, payload = a.Alloc(blockSize, 0 /* extraCap */)
-					w.randFillBlock(rndBlock, payload, uniqueSize)
-					valCol.Set(rowOffset, payload)
-				}
+		table := workload.Table{Name: name}
+>>>>>>> Stashed changes
+		table.Splits = workload.Tuples(
+			w.splits,
+			func(splitIdx int) []interface{} {
+				return []interface{}{splitFinder(splitIdx, w.splits, kr, kt)}
 			},
-		}
-	}
+		)
 
-	return []workload.Table{table}
+		if w.shards > 0 {
+			schema := shardedKvSchema
+			if w.secondaryIndex {
+				schema = shardedKvSchemaWithIndex
+			}
+			table.Schema = fmt.Sprintf(schema, kt.keySQLType(), w.shards)
+		} else {
+			schema := kvSchema
+			if w.secondaryIndex {
+				schema = kvSchemaWithIndex
+			}
+			table.Schema = fmt.Sprintf(schema, kt.keySQLType())
+		}
+
+		if w.insertCount > 0 {
+			const batchSize = 1000
+			table.InitialRows = workload.BatchedTuples{
+				NumBatches: (w.insertCount + batchSize - 1) / batchSize,
+				FillBatch: func(batchIdx int, cb coldata.Batch, a *bufalloc.ByteAllocator) {
+					rowBegin, rowEnd := batchIdx*batchSize, (batchIdx+1)*batchSize
+					if rowEnd > w.insertCount {
+						rowEnd = w.insertCount
+					}
+
+					var kvtableTypes = []*types.T{
+						kt.getColumnType(),
+						types.Bytes,
+					}
+
+					cb.Reset(kvtableTypes, rowEnd-rowBegin, coldata.StandardColumnFactory)
+
+					{
+						seq := rowBegin
+						kt.fillColumnBatch(cb, a, func() (s int64, ok bool) {
+							if seq < rowEnd {
+								seq++
+								return insertCountKey(int64(seq-1), int64(w.insertCount), kr), true
+							}
+							return 0, false
+						})
+					}
+
+					valCol := cb.ColVec(1).Bytes()
+					// coldata.Bytes only allows appends so we have to reset it.
+					valCol.Reset()
+					rndBlock := rand.New(rand.NewSource(RandomSeed.Seed()))
+
+					for rowIdx := rowBegin; rowIdx < rowEnd; rowIdx++ {
+						rowOffset := rowIdx - rowBegin
+						var payload []byte
+						blockSize, uniqueSize := w.randBlockSize(rndBlock)
+						*a, payload = a.Alloc(blockSize, 0 /* extraCap */)
+						w.randFillBlock(rndBlock, payload, uniqueSize)
+						valCol.Set(rowOffset, payload)
+					}
+				},
+			}
+		}
+
+		tables = append(tables, table)
+	}
+	return tables
 }
 
 // Ops implements the Opser interface.
@@ -450,7 +465,11 @@ func (w *kv) Ops(
 	// Read statement
 	var buf strings.Builder
 	if w.enum {
-		buf.WriteString(`SELECT k, v, e FROM kv WHERE k IN (`)
+<<<<<<< Updated upstream
+		buf.WriteString(`SELECT k, v, e FROM kv%d WHERE k IN (`)
+=======
+		buf.WriteString(`SELECT k, v, e FROM kv%v WHERE k IN (`)
+>>>>>>> Stashed changes
 		for i := 0; i < w.batchSize; i++ {
 			if i > 0 {
 				buf.WriteString(", ")
@@ -458,7 +477,11 @@ func (w *kv) Ops(
 			fmt.Fprintf(&buf, `$%d`, i+1)
 		}
 	} else {
-		buf.WriteString(`SELECT k, v FROM kv WHERE k IN (`)
+<<<<<<< Updated upstream
+		buf.WriteString(`SELECT k, v FROM kv%d WHERE k IN (`)
+=======
+		buf.WriteString(`SELECT k, v FROM kv%v WHERE k IN (`)
+>>>>>>> Stashed changes
 		for i := 0; i < w.batchSize; i++ {
 			if i > 0 {
 				buf.WriteString(", ")
@@ -471,7 +494,11 @@ func (w *kv) Ops(
 
 	// Write statement
 	buf.Reset()
-	buf.WriteString(`UPSERT INTO kv (k, v) VALUES`)
+<<<<<<< Updated upstream
+	buf.WriteString(`UPSERT INTO kv%d (k, v) VALUES`)
+=======
+	buf.WriteString(`UPSERT INTO kv%v (k, v) VALUES`)
+>>>>>>> Stashed changes
 	for i := 0; i < w.batchSize; i++ {
 		j := i * 2
 		if i > 0 {
@@ -485,7 +512,11 @@ func (w *kv) Ops(
 	var sfuStmtStr string
 	if w.writesUseSelectForUpdate {
 		buf.Reset()
-		buf.WriteString(`SELECT k, v FROM kv WHERE k IN (`)
+<<<<<<< Updated upstream
+		buf.WriteString(`SELECT k, v FROM kv%d WHERE k IN (`)
+=======
+		buf.WriteString(`SELECT k, v FROM kv%v WHERE k IN (`)
+>>>>>>> Stashed changes
 		for i := 0; i < w.batchSize; i++ {
 			if i > 0 {
 				buf.WriteString(", ")
@@ -498,7 +529,11 @@ func (w *kv) Ops(
 
 	// Span statement
 	buf.Reset()
-	buf.WriteString(`SELECT count(v) FROM [SELECT v FROM kv`)
+<<<<<<< Updated upstream
+	buf.WriteString(`SELECT count(v) FROM [SELECT v FROM kv%d`)
+=======
+	buf.WriteString(`SELECT count(v) FROM [SELECT v FROM kv%v`)
+>>>>>>> Stashed changes
 	if w.spanLimit > 0 {
 		// Span statements without a limit query all ranges. However, if there's
 		// a span limit specified, we want to randomly choose the range from which
@@ -511,7 +546,11 @@ func (w *kv) Ops(
 
 	// Del statement
 	buf.Reset()
-	buf.WriteString(`DELETE FROM kv WHERE k IN (`)
+<<<<<<< Updated upstream
+	buf.WriteString(`DELETE FROM kv%d WHERE k IN (`)
+=======
+	buf.WriteString(`DELETE FROM kv%v WHERE k IN (`)
+>>>>>>> Stashed changes
 	for i := 0; i < w.batchSize; i++ {
 		if i > 0 {
 			buf.WriteString(", ")
@@ -520,6 +559,13 @@ func (w *kv) Ops(
 	}
 	buf.WriteString(`)`)
 	delStmtStr := buf.String()
+
+	makeKvTableName := func(f string, i int) string {
+		if w.numTables <= 1 {
+			return fmt.Sprintf(f, "")
+		}
+		return fmt.Sprintf(f, i)
+	}
 
 	gen, _, kt, _ := w.createKeyGenerator()
 	ql := workload.QueryLoad{SQLDatabase: sqlDatabase}
@@ -530,18 +576,30 @@ func (w *kv) Ops(
 			hists:           reg.GetHandle(),
 			numEmptyResults: &numEmptyResults,
 		}
-		op.readStmt = op.sr.Define(readStmtStr)
-		op.writeStmt = op.sr.Define(writeStmtStr)
+<<<<<<< Updated upstream
+		op.readStmt = op.sr.Define(fmt.Sprintf(readStmtStr, i%w.numTables))
+		op.writeStmt = op.sr.Define(fmt.Sprintf(writeStmtStr, i%w.numTables))
 		if len(sfuStmtStr) > 0 {
-			op.sfuStmt = op.sr.Define(sfuStmtStr)
+			op.sfuStmt = op.sr.Define(fmt.Sprintf(sfuStmtStr, i%w.numTables))
+=======
+		op.readStmt = op.sr.Define(makeKvTableName(readStmtStr, i%w.numTables))
+		op.writeStmt = op.sr.Define(makeKvTableName(writeStmtStr, i%w.numTables))
+		if len(sfuStmtStr) > 0 {
+			op.sfuStmt = op.sr.Define(makeKvTableName(sfuStmtStr, i%w.numTables))
+>>>>>>> Stashed changes
 		}
-		op.spanStmt = op.sr.Define(spanStmtStr)
+		op.spanStmt = op.sr.Define(makeKvTableName(spanStmtStr, i%w.numTables))
 		if w.useBackgroundTxnQoS {
 			stmt := op.sr.Define(" SET default_transaction_quality_of_service = background")
 			op.qosStmt = &stmt
 		}
-		op.delStmt = op.sr.Define(delStmtStr)
-		if err := op.sr.Init(ctx, "kv", mcp); err != nil {
+<<<<<<< Updated upstream
+		op.delStmt = op.sr.Define(fmt.Sprintf(delStmtStr, i%w.numTables))
+		if err := op.sr.Init(ctx, fmt.Sprintf("kv%d", i%w.numTables), mcp); err != nil {
+=======
+		op.delStmt = op.sr.Define(makeKvTableName(delStmtStr, i%w.numTables))
+		if err := op.sr.Init(ctx, makeKvTableName("kv%v", i%w.numTables), mcp); err != nil {
+>>>>>>> Stashed changes
 			return workload.QueryLoad{}, err
 		}
 		op.mcp = mcp
