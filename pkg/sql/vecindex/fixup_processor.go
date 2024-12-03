@@ -501,14 +501,14 @@ func (fp *fixupProcessor) splitPartition(
 
 		searchCtx.Randomized = leftSplit.Partition.Centroid()
 		childKey := vecstore.ChildKey{PartitionKey: leftPartitionKey}
-		err = fp.index.insertHelper(searchCtx, childKey, true /* allowRetry */)
+		err = fp.index.insertHelper(searchCtx, childKey)
 		if err != nil {
 			return errors.Wrapf(err, "inserting left partition for split of partition %d", partitionKey)
 		}
 
 		searchCtx.Randomized = rightSplit.Partition.Centroid()
 		childKey = vecstore.ChildKey{PartitionKey: rightPartitionKey}
-		err = fp.index.insertHelper(searchCtx, childKey, true /* allowRetry */)
+		err = fp.index.insertHelper(searchCtx, childKey)
 		if err != nil {
 			return errors.Wrapf(err, "inserting right partition for split of partition %d", partitionKey)
 		}
@@ -656,6 +656,12 @@ func (fp *fixupProcessor) moveVectorsToSiblings(
 		childKey := split.Partition.ChildKeys()[i]
 		_, err = fp.index.addToPartition(ctx, txn, parentPartitionKey, siblingPartitionKey, vector, childKey)
 		if err != nil {
+			if errors.Is(err, vecstore.ErrRestartTransaction) {
+				// Sibling partition has been split or merged, just don't move this
+				// vector to it.
+				panic("don't move the vector")
+				continue
+			}
 			return errors.Wrapf(err, "moving vector to partition %d", siblingPartitionKey)
 		}
 
@@ -693,7 +699,7 @@ func (fp *fixupProcessor) linkNearbyVectors(
 		return nil
 	}
 	searchSet := vecstore.SearchSet{MaxResults: maxResults}
-	err := fp.index.searchHelper(searchCtx, &searchSet, true /* allowRetry */)
+	err := fp.index.searchHelper(searchCtx, &searchSet)
 	if err != nil {
 		return err
 	}
@@ -807,27 +813,15 @@ func (fp *fixupProcessor) mergePartition(
 	log.VEventf(ctx, 2, "merging partition %d (%d vectors)",
 		partitionKey, len(partition.ChildKeys()))
 
-	// De-link the merging partition from its parent partition. This does not
-	// delete data or metadata in the partition.
-	childKey := vecstore.ChildKey{PartitionKey: partitionKey}
-	if !parentPartition.ReplaceWithLastByKey(childKey) {
-		log.VEventf(ctx, 2, "partition %d is no longer child of partition %d, do not merge",
-			partitionKey, parentPartitionKey)
-		return nil
-	}
-	if _, err = fp.index.removeFromPartition(ctx, txn, parentPartitionKey, childKey); err != nil {
-		return errors.Wrapf(err, "remove partition %d from parent partition %d",
-			partitionKey, parentPartitionKey)
-	}
-
 	// Delete the merging partition from the store. This actually deletes the
 	// partition's data and metadata.
 	if err = fp.index.store.DeletePartition(ctx, txn, partitionKey); err != nil {
 		return errors.Wrapf(err, "deleting partition %d", partitionKey)
 	}
 
-	// Move vectors from the deleted partition to other partitions.
-	if parentPartition.Count() == 0 {
+	if parentPartition.Count() == 1 {
+		// If the merging partition is the last partition in the parent, then
+
 		// The parent is now empty, which means the deleted partition was the last
 		// partition in the parent. That means that the entire level needs to be
 		// removed from the tree. This is only allowed if the parent partition is
@@ -843,22 +837,38 @@ func (fp *fixupProcessor) mergePartition(
 		if err = fp.index.store.SetRootPartition(ctx, txn, rootPartition); err != nil {
 			return errors.Wrapf(err, "setting new root for merge of partition %d", partitionKey)
 		}
-	} else {
-		// Re-insert vectors into remaining partitions at the same level.
-		fp.searchCtx = searchContext{
-			Ctx:       ctx,
-			Workspace: fp.workspace,
-			Txn:       txn,
-			Level:     parentPartition.Level(),
-		}
 
-		childKeys := partition.ChildKeys()
-		for i := range childKeys {
-			fp.searchCtx.Randomized = vectors.At(i)
-			err = fp.index.insertHelper(&fp.searchCtx, childKeys[i], true /* allowRetry */)
-			if err != nil {
-				return errors.Wrapf(err, "inserting vector from merged partition %d", partitionKey)
-			}
+		return nil
+	}
+
+	// De-link the merging partition from its parent partition. This does not
+	// delete data or metadata in the partition.
+	childKey := vecstore.ChildKey{PartitionKey: partitionKey}
+	if !parentPartition.ReplaceWithLastByKey(childKey) {
+		log.VEventf(ctx, 2, "partition %d is no longer child of partition %d, do not merge",
+			partitionKey, parentPartitionKey)
+		return nil
+	}
+	if _, err = fp.index.removeFromPartition(ctx, txn, parentPartitionKey, childKey); err != nil {
+		return errors.Wrapf(err, "remove partition %d from parent partition %d",
+			partitionKey, parentPartitionKey)
+	}
+
+	// Move vectors from the deleted partition to other partitions at the same
+	// level.
+	fp.searchCtx = searchContext{
+		Ctx:       ctx,
+		Workspace: fp.workspace,
+		Txn:       txn,
+		Level:     parentPartition.Level(),
+	}
+
+	childKeys := partition.ChildKeys()
+	for i := range childKeys {
+		fp.searchCtx.Randomized = vectors.At(i)
+		err = fp.index.insertHelper(&fp.searchCtx, childKeys[i])
+		if err != nil {
+			return errors.Wrapf(err, "inserting vector from merged partition %d", partitionKey)
 		}
 	}
 

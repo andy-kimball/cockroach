@@ -7,9 +7,11 @@ package vecstore
 
 import (
 	"context"
+	"fmt"
 	"slices"
 
 	"github.com/cockroachdb/cockroach/pkg/sql/vecindex/quantize"
+	"github.com/cockroachdb/cockroach/pkg/util/container/list"
 	"github.com/cockroachdb/cockroach/pkg/util/protoutil"
 	"github.com/cockroachdb/cockroach/pkg/util/syncutil"
 	"github.com/cockroachdb/cockroach/pkg/util/vector"
@@ -20,25 +22,18 @@ import (
 // calculations.
 const storeStatsAlpha = 0.05
 
-// lockType specifies the type of lock that transactions have acquired.
-type lockType int
-
-const (
-	noLock lockType = iota
-	// dataLock is a shared lock that's acquired when reading, inserting, or
-	// deleting vectors in the in-memory store. These operations can proceed in
-	// parallel.
-	dataLock
-	// partitionLock is an exclusive lock that's acquired when reading, inserting,
-	// or deleting partitions in the in-memory store. When this lock is acquired,
-	// all other data and partition transactions will be forced to wait.
-	partitionLock
-)
+type txnId uint64
 
 // inMemoryTxn tracks the transaction's state.
 type inMemoryTxn struct {
-	// lock is the kind of lock that's been acquired by the transaction.
-	lock lockType
+	id txnId
+
+	// current is immutable.
+	current uint64
+
+	// These fields should only be accessed on the same goroutine that created
+	// the transaction.
+
 	// updated is true if any in-memory state has been updated.
 	updated bool
 	// unbalancedKey, if non-zero, records a non-leaf partition that had all of
@@ -46,7 +41,36 @@ type inMemoryTxn struct {
 	// transaction, the partition is still empty, the store will panic, since
 	// this violates the constraint that the K-means tree is always fully
 	// balanced.
-	unbalancedKey PartitionKey
+	unbalanced *inMemoryPartition
+
+	lockedPartitions []*inMemoryPartition
+
+	// This can only be accessed after the store mutex has been acquired.
+	muStore struct {
+		ended bool
+	}
+}
+
+type inMemoryPartition struct {
+	// Immutable.
+	key PartitionKey
+
+	lock struct {
+		partitionLock
+
+		partition *Partition
+		start     uint64
+		deleted   bool
+	}
+}
+
+func (p *inMemoryPartition) isVisibleLocked(current uint64) bool {
+	return !p.lock.deleted && (p.key != RootKey || current > p.lock.start)
+}
+
+type pendingAction struct {
+	activeTxn        inMemoryTxn
+	deletedPartition *inMemoryPartition
 }
 
 // InMemoryStore implements the Store interface over in-memory partitions and
@@ -55,13 +79,15 @@ type InMemoryStore struct {
 	dims int
 	seed int64
 
-	txnLock syncutil.RWMutex
-	mu      struct {
+	mu struct {
 		syncutil.Mutex
-		partitions map[PartitionKey]*Partition
+
+		clock      uint64
+		partitions map[PartitionKey]*inMemoryPartition
 		nextKey    PartitionKey
 		vectors    map[string]vector.T
 		stats      IndexStats
+		pending    list.List[pendingAction]
 	}
 }
 
@@ -76,54 +102,100 @@ func NewInMemoryStore(dims int, seed int64) *InMemoryStore {
 		dims: dims,
 		seed: seed,
 	}
-	st.mu.partitions = make(map[PartitionKey]*Partition)
+	st.mu.partitions = make(map[PartitionKey]*inMemoryPartition)
+	st.mu.nextKey = RootKey + 1
 
 	// Create empty root partition.
 	var empty vector.Set
 	quantizer := quantize.NewUnQuantizer(dims)
 	quantizedSet := quantizer.Quantize(context.Background(), &empty)
-	st.mu.partitions[RootKey] = &Partition{
+	inMemPartition := &inMemoryPartition{
+		key: RootKey,
+	}
+	inMemPartition.lock.partition = &Partition{
 		quantizer:    quantizer,
 		quantizedSet: quantizedSet,
 		level:        LeafLevel,
 	}
+	inMemPartition.lock.start = 1
+	st.mu.partitions[RootKey] = inMemPartition
 
-	st.mu.nextKey = RootKey + 1
+	st.mu.clock = 2
 	st.mu.vectors = make(map[string]vector.T)
 	st.mu.stats.NumPartitions = 1
+	st.mu.pending.Init()
 	return st
 }
 
 // BeginTransaction implements the Store interface.
 func (s *InMemoryStore) BeginTransaction(ctx context.Context) (Txn, error) {
-	return &inMemoryTxn{}, nil
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Create new transaction with ID set to the current logical clock tick and
+	// insert the transaction into the pending list.
+	txn := inMemoryTxn{id: txnId(s.mu.clock), current: s.mu.clock}
+	s.mu.clock++
+	elem := s.mu.pending.PushBack(pendingAction{activeTxn: txn})
+	return &elem.Value.activeTxn, nil
 }
 
 // CommitTransaction implements the Store interface.
 func (s *InMemoryStore) CommitTransaction(ctx context.Context, txn Txn) error {
+	// Release any exclusive partition locks held by the transaction.
 	inMemTxn := txn.(*inMemoryTxn)
+	for i := range inMemTxn.lockedPartitions {
+		inMemTxn.lockedPartitions[i].lock.Release()
+	}
 
 	// Panic if the K-means tree contains an empty non-leaf partition after the
 	// transaction ends, as this violates the constraint that the K-means tree
-	// is always full balanced.
-	if inMemTxn.unbalancedKey != 0 {
-		s.mu.Lock()
-		defer s.mu.Unlock()
+	// is always fully balanced.
+	if inMemTxn.unbalanced != nil {
+		// Need to acquire partition lock before inspecting the partition.
+		func() {
+			inMemTxn.unbalanced.lock.AcquireShared(inMemTxn.id)
+			defer inMemTxn.unbalanced.lock.ReleaseShared()
 
-		partition, ok := s.mu.partitions[inMemTxn.unbalancedKey]
-		if ok && partition.Count() == 0 && partition.Level() > LeafLevel {
-			panic(errors.AssertionFailedf(
-				"K-means tree is unbalanced, with empty non-leaf partition %d", inMemTxn.unbalancedKey))
+			partition := inMemTxn.unbalanced.lock.partition
+			if partition.Count() == 0 && partition.Level() > LeafLevel {
+				if inMemTxn.unbalanced.isVisibleLocked(inMemTxn.current) {
+					panic(errors.AssertionFailedf(
+						"K-means tree is unbalanced, with empty non-leaf partition %d",
+						inMemTxn.unbalanced.key))
+				}
+			}
+		}()
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	inMemTxn.muStore.ended = true
+
+	// Iterate over pending actions:
+	//   1. Remove any ended transactions that are at the front of the pending
+	//      list (i.e. that have been pending for longest). Transactions are
+	//      always removed in FIFO order, even if they actually ended in a
+	//      different order.
+	//   2. Garbage collect any deleted partitions that are at the front of the
+	//      pending list.
+	for s.mu.pending.Len() > 0 {
+		elem := s.mu.pending.Front()
+		if elem.Value.activeTxn.id != 0 {
+			if !elem.Value.activeTxn.muStore.ended {
+				// Oldest transaction is still active, no nothing more to do.
+				break
+			}
+		} else {
+			// Garbage collect the deleted partition.
+			delete(s.mu.partitions, elem.Value.deletedPartition.key)
 		}
+
+		// Remove the action from the pending list.
+		s.mu.pending.Remove(elem)
 	}
 
-	switch inMemTxn.lock {
-	case dataLock:
-		s.txnLock.RUnlock()
-	case partitionLock:
-		s.txnLock.Unlock()
-	}
-	inMemTxn.lock = noLock
 	return nil
 }
 
@@ -142,32 +214,44 @@ func (s *InMemoryStore) AbortTransaction(ctx context.Context, txn Txn) error {
 func (s *InMemoryStore) GetPartition(
 	ctx context.Context, txn Txn, partitionKey PartitionKey,
 ) (*Partition, error) {
-	s.acquireTxnLock(txn, partitionLock, false /* updating */)
+	inMemPartition, err := s.getPartition(partitionKey)
+	if err != nil {
+		return nil, err
+	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	// Acquire exclusive lock on the partition for the duration of the
+	// transaction.
+	inMemTxn := txn.(*inMemoryTxn)
+	inMemPartition.lock.Acquire(inMemTxn.id)
+	inMemTxn.lockedPartitions = append(inMemTxn.lockedPartitions, inMemPartition)
 
-	partition, ok := s.mu.partitions[partitionKey]
-	if !ok {
+	// Return an error if the partition has been deleted.
+	if !inMemPartition.isVisibleLocked(inMemTxn.current) {
 		return nil, ErrPartitionNotFound
 	}
 
-	// Make a deep copy of the partition, since the caller is allowed to modify
-	// it, and that shouldn't impact the store's copy.
-	return partition.Clone(), nil
+	// Make a deep copy of the partition, since modifications shouldn't impact
+	// the store's copy.
+	return inMemPartition.lock.partition.Clone(), nil
 }
 
 // SetRootPartition implements the Store interface.
 func (s *InMemoryStore) SetRootPartition(ctx context.Context, txn Txn, partition *Partition) error {
-	s.acquireTxnLock(txn, partitionLock, true /* updating */)
-
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	_, ok := s.mu.partitions[RootKey]
+	inMemTxn := txn.(*inMemoryTxn)
+
+	existing, ok := s.mu.partitions[RootKey]
 	if !ok {
 		panic(errors.AssertionFailedf("the root partition cannot be found"))
 	}
+
+	// Existing root partition should have been locked by the transaction.
+	if !existing.lock.IsAcquiredBy(inMemTxn.id) {
+		panic(errors.AssertionFailedf("txn %d did not acquire root partition lock", inMemTxn.id))
+	}
+
 	s.reportPartitionSizeLocked(partition.Count())
 
 	// Grow or shrink CVStats slice if a new level is being added or removed.
@@ -177,7 +261,15 @@ func (s *InMemoryStore) SetRootPartition(ctx context.Context, txn Txn, partition
 	}
 	s.mu.stats.CVStats = s.mu.stats.CVStats[:expectedLevels]
 
-	s.mu.partitions[RootKey] = partition
+	// Delete previous partition and start new partition.
+	existing.lock.deleted = true
+	inMemPartition := &inMemoryPartition{key: RootKey}
+	inMemPartition.lock.partition = partition
+	inMemPartition.lock.start = s.mu.clock
+	s.mu.clock++
+	s.mu.partitions[RootKey] = inMemPartition
+
+	inMemTxn.updated = true
 	return nil
 }
 
@@ -185,16 +277,24 @@ func (s *InMemoryStore) SetRootPartition(ctx context.Context, txn Txn, partition
 func (s *InMemoryStore) InsertPartition(
 	ctx context.Context, txn Txn, partition *Partition,
 ) (PartitionKey, error) {
-	s.acquireTxnLock(txn, partitionLock, true /* updating */)
-
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	inMemTxn := txn.(*inMemoryTxn)
+
 	partitionKey := s.mu.nextKey
 	s.mu.nextKey++
-	s.mu.partitions[partitionKey] = partition
+
+	inMemPartition := &inMemoryPartition{key: partitionKey}
+	inMemPartition.lock.partition = partition
+	inMemPartition.lock.start = s.mu.clock
+	s.mu.clock++
+	s.mu.partitions[partitionKey] = inMemPartition
+
 	s.mu.stats.NumPartitions++
 	s.reportPartitionSizeLocked(partition.Count())
+
+	inMemTxn.updated = true
 	return partitionKey, nil
 }
 
@@ -202,8 +302,6 @@ func (s *InMemoryStore) InsertPartition(
 func (s *InMemoryStore) DeletePartition(
 	ctx context.Context, txn Txn, partitionKey PartitionKey,
 ) error {
-	s.acquireTxnLock(txn, partitionLock, true /* updating */)
-
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -211,12 +309,39 @@ func (s *InMemoryStore) DeletePartition(
 		panic(errors.AssertionFailedf("cannot delete the root partition"))
 	}
 
-	_, ok := s.mu.partitions[partitionKey]
+	inMemPartition, ok := s.mu.partitions[partitionKey]
 	if !ok {
 		return ErrPartitionNotFound
 	}
-	delete(s.mu.partitions, partitionKey)
+
+	inMemTxn := txn.(*inMemoryTxn)
+
+	// Existing root partition should have been locked by the transaction.
+	if !inMemPartition.lock.IsAcquiredBy(inMemTxn.id) {
+		panic(errors.AssertionFailedf("txn %d did not acquire root partition lock", inMemTxn.id))
+	}
+
+	if inMemTxn.updated == false {
+		// Must be a merge operation.
+		root := s.mu.partitions[RootKey]
+		if !root.lock.TryAcquire(inMemTxn.id) {
+			return ErrRestartTransaction
+		}
+		inMemTxn.lockedPartitions = append(inMemTxn.lockedPartitions, root)
+	}
+
+	if inMemPartition.lock.deleted {
+		panic(errors.AssertionFailedf("partition %d is already deleted", partitionKey))
+	}
+	inMemPartition.lock.deleted = true
+
+	// Add the partition to the pending list so that it will only be garbage
+	// collected once all older transactions have ended.
+	s.mu.pending.PushBack(pendingAction{deletedPartition: inMemPartition})
+
 	s.mu.stats.NumPartitions--
+
+	inMemTxn.updated = true
 	return nil
 }
 
@@ -224,20 +349,42 @@ func (s *InMemoryStore) DeletePartition(
 func (s *InMemoryStore) AddToPartition(
 	ctx context.Context, txn Txn, partitionKey PartitionKey, vector vector.T, childKey ChildKey,
 ) (int, error) {
-	s.acquireTxnLock(txn, dataLock, true /* updating */)
+	inMemPartition, err := s.getPartition(partitionKey)
+	if err != nil {
+		return 0, err
+	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	inMemTxn := txn.(*inMemoryTxn)
 
-	partition, ok := s.mu.partitions[partitionKey]
-	if !ok {
-		return 0, ErrPartitionNotFound
+	// Acquire exclusive lock on the partition.
+	inMemPartition.lock.Acquire(inMemTxn.id)
+	defer inMemPartition.lock.Release()
+
+	// If the partition is deleted, then this transaction conflicted with another
+	// transaction and needs to be restarted.
+	if !inMemPartition.isVisibleLocked(inMemTxn.current) {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		inMemTxn.current = s.mu.clock
+		s.mu.clock++
+		return 0, ErrRestartOperation
+	}
+
+	partition := inMemPartition.lock.partition
+
+	if partition.Count() > 0 {
+		if (childKey.PartitionKey == 0) != (partition.ChildKeys()[0].PartitionKey == 0) {
+			fmt.Println("here")
+		}
 	}
 
 	if partition.Add(ctx, vector, childKey) {
+		s.mu.Lock()
+		defer s.mu.Unlock()
 		s.reportPartitionSizeLocked(partition.Count())
 	}
 
+	inMemTxn.updated = true
 	return partition.Count(), nil
 }
 
@@ -245,17 +392,31 @@ func (s *InMemoryStore) AddToPartition(
 func (s *InMemoryStore) RemoveFromPartition(
 	ctx context.Context, txn Txn, partitionKey PartitionKey, childKey ChildKey,
 ) (int, error) {
-	s.acquireTxnLock(txn, dataLock, true /* updating */)
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	partition, ok := s.mu.partitions[partitionKey]
-	if !ok {
-		return 0, ErrPartitionNotFound
+	inMemPartition, err := s.getPartition(partitionKey)
+	if err != nil {
+		return 0, err
 	}
 
+	inMemTxn := txn.(*inMemoryTxn)
+
+	// Acquire exclusive lock on the partition.
+	inMemPartition.lock.Acquire(inMemTxn.id)
+	defer inMemPartition.lock.Release()
+
+	// If the partition is deleted, then this transaction conflicted with another
+	// transaction and needs to be restarted.
+	if !inMemPartition.isVisibleLocked(inMemTxn.current) {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		inMemTxn.current = s.mu.clock
+		s.mu.clock++
+		return 0, ErrRestartOperation
+	}
+
+	partition := inMemPartition.lock.partition
 	if partition.ReplaceWithLastByKey(childKey) {
+		s.mu.Lock()
+		defer s.mu.Unlock()
 		s.reportPartitionSizeLocked(partition.Count())
 	}
 
@@ -263,9 +424,10 @@ func (s *InMemoryStore) RemoveFromPartition(
 		// A non-leaf partition has zero vectors. If this is still true at the
 		// end of the transaction, the K-means tree will be unbalanced, which
 		// violates a key constraint.
-		txn.(*inMemoryTxn).unbalancedKey = partitionKey
+		txn.(*inMemoryTxn).unbalanced = inMemPartition
 	}
 
+	inMemTxn.updated = true
 	return partition.Count(), nil
 }
 
@@ -278,26 +440,34 @@ func (s *InMemoryStore) SearchPartitions(
 	searchSet *SearchSet,
 	partitionCounts []int,
 ) (level Level, err error) {
-	s.acquireTxnLock(txn, dataLock, false /* updating */)
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	inMemTxn := txn.(*inMemoryTxn)
 
 	for i := 0; i < len(partitionKeys); i++ {
-		partition, ok := s.mu.partitions[partitionKeys[i]]
-		if !ok {
-			return 0, ErrPartitionNotFound
+		inMemPartition, err := s.getPartition(partitionKeys[i])
+		if err != nil {
+			return 0, err
 		}
-		searchLevel, partitionCount := partition.Search(ctx, partitionKeys[i], queryVector, searchSet)
-		if i == 0 {
-			level = searchLevel
-		} else if level != searchLevel {
-			// Callers should only search for partitions at the same level.
-			panic(errors.AssertionFailedf(
-				"caller already searched a partition at level %d, cannot search at level %d",
-				level, searchLevel))
-		}
-		partitionCounts[i] = partitionCount
+
+		// Acquire shared lock on partition and search it. Note that we don't need
+		// to check if the partition has been deleted, since the transaction that
+		// deleted it must be concurrent with this transaction (or else the
+		// deleted partition would not have been found by this transaction).
+		func() {
+			inMemPartition.lock.AcquireShared(inMemTxn.id)
+			defer inMemPartition.lock.ReleaseShared()
+
+			searchLevel, partitionCount := inMemPartition.lock.partition.Search(
+				ctx, partitionKeys[i], queryVector, searchSet)
+			if i == 0 {
+				level = searchLevel
+			} else if level != searchLevel {
+				// Callers should only search for partitions at the same level.
+				panic(errors.AssertionFailedf(
+					"caller already searched a partition at level %d, cannot search at level %d",
+					level, searchLevel))
+			}
+			partitionCounts[i] = partitionCount
+		}()
 	}
 
 	return level, nil
@@ -305,20 +475,21 @@ func (s *InMemoryStore) SearchPartitions(
 
 // GetFullVectors implements the Store interface.
 func (s *InMemoryStore) GetFullVectors(ctx context.Context, txn Txn, refs []VectorWithKey) error {
-	s.acquireTxnLock(txn, dataLock, false /* updating */)
-
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	for i := 0; i < len(refs); i++ {
 		ref := &refs[i]
 		if ref.Key.PartitionKey != InvalidKey {
-			// Return the partition's centroid.
-			partition, ok := s.mu.partitions[ref.Key.PartitionKey]
+			// Get the partition's centroid.
+			inMemPartition, ok := s.mu.partitions[ref.Key.PartitionKey]
 			if !ok {
 				return ErrPartitionNotFound
 			}
-			ref.Vector = partition.Centroid()
+
+			// Don't need to acquire lock to call the Centroid method, since it
+			// is immutable and thread-safe.
+			ref.Vector = inMemPartition.lock.partition.Centroid()
 		} else {
 			vector, ok := s.mu.vectors[string(refs[i].Key.PrimaryKey)]
 			if ok {
@@ -376,10 +547,11 @@ func (s *InMemoryStore) MergeStats(ctx context.Context, stats *IndexStats, skipM
 // associated with the given primary key. This mimics inserting a vector into
 // the primary index, and is used during testing and benchmarking.
 func (s *InMemoryStore) InsertVector(txn Txn, key PrimaryKey, vector vector.T) {
-	s.acquireTxnLock(txn, dataLock, true /* updating */)
-
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	inMemTxn := txn.(*inMemoryTxn)
+	inMemTxn.updated = true
 
 	s.mu.vectors[string(key)] = vector
 }
@@ -388,10 +560,11 @@ func (s *InMemoryStore) InsertVector(txn Txn, key PrimaryKey, vector vector.T) {
 // the in-memory store. This mimics deleting a vector from the primary index,
 // and is used during testing and benchmarking.
 func (s *InMemoryStore) DeleteVector(txn Txn, key PrimaryKey) {
-	s.acquireTxnLock(txn, dataLock, true /* updating */)
-
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	inMemTxn := txn.(*inMemoryTxn)
+	inMemTxn.updated = true
 
 	delete(s.mu.vectors, string(key))
 }
@@ -424,6 +597,10 @@ func (s *InMemoryStore) MarshalBinary() (data []byte, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if s.mu.pending.Len() > 0 {
+		panic(errors.AssertionFailedf("cannot save store if there are pending transactions"))
+	}
+
 	storeProto := StoreProto{
 		Dims:       s.dims,
 		Seed:       s.seed,
@@ -434,21 +611,27 @@ func (s *InMemoryStore) MarshalBinary() (data []byte, err error) {
 	}
 
 	// Remap partitions to protobufs.
-	for partitionKey, partition := range s.mu.partitions {
-		partitionProto := PartitionProto{
-			PartitionKey: partitionKey,
-			ChildKeys:    partition.ChildKeys(),
-			Level:        partition.Level(),
-		}
+	for partitionKey, inMemPartition := range s.mu.partitions {
+		func() {
+			inMemPartition.lock.AcquireShared(0)
+			defer inMemPartition.lock.ReleaseShared()
 
-		rabitq, ok := partition.quantizedSet.(*quantize.RaBitQuantizedVectorSet)
-		if ok {
-			partitionProto.RaBitQ = rabitq
-		} else {
-			partitionProto.UnQuantized = partition.quantizedSet.(*quantize.UnQuantizedVectorSet)
-		}
+			partition := inMemPartition.lock.partition
+			partitionProto := PartitionProto{
+				PartitionKey: partitionKey,
+				ChildKeys:    partition.ChildKeys(),
+				Level:        partition.Level(),
+			}
 
-		storeProto.Partitions = append(storeProto.Partitions, partitionProto)
+			rabitq, ok := partition.quantizedSet.(*quantize.RaBitQuantizedVectorSet)
+			if ok {
+				partitionProto.RaBitQ = rabitq
+			} else {
+				partitionProto.UnQuantized = partition.quantizedSet.(*quantize.UnQuantizedVectorSet)
+			}
+
+			storeProto.Partitions = append(storeProto.Partitions, partitionProto)
+		}()
 	}
 
 	// Remap vectors to protobufs.
@@ -475,10 +658,12 @@ func LoadInMemoryStore(data []byte) (*InMemoryStore, error) {
 		dims: storeProto.Dims,
 		seed: storeProto.Seed,
 	}
-	inMemStore.mu.partitions = make(map[PartitionKey]*Partition, len(storeProto.Partitions))
+	inMemStore.mu.clock = 2
+	inMemStore.mu.partitions = make(map[PartitionKey]*inMemoryPartition, len(storeProto.Partitions))
 	inMemStore.mu.nextKey = storeProto.NextKey
 	inMemStore.mu.vectors = make(map[string]vector.T, len(storeProto.Vectors))
 	inMemStore.mu.stats = storeProto.Stats
+	inMemStore.mu.pending.Init()
 
 	raBitQuantizer := quantize.NewRaBitQuantizer(storeProto.Dims, storeProto.Seed)
 	unquantizer := quantize.NewUnQuantizer(storeProto.Dims)
@@ -486,10 +671,15 @@ func LoadInMemoryStore(data []byte) (*InMemoryStore, error) {
 	// Construct the Partition objects.
 	for i := range storeProto.Partitions {
 		partitionProto := &storeProto.Partitions[i]
-		var partition = Partition{
-			childKeys: partitionProto.ChildKeys,
-			level:     partitionProto.Level,
+		var inMemPartition = &inMemoryPartition{
+			key: partitionProto.PartitionKey,
 		}
+		inMemPartition.lock.start = 1
+
+		partition := inMemPartition.lock.partition
+		partition.childKeys = partitionProto.ChildKeys
+		partition.level = partitionProto.Level
+
 		if partitionProto.RaBitQ != nil {
 			partition.quantizer = raBitQuantizer
 			partition.quantizedSet = partitionProto.RaBitQ
@@ -497,7 +687,7 @@ func LoadInMemoryStore(data []byte) (*InMemoryStore, error) {
 			partition.quantizer = unquantizer
 			partition.quantizedSet = partitionProto.UnQuantized
 		}
-		inMemStore.mu.partitions[partitionProto.PartitionKey] = &partition
+		inMemStore.mu.partitions[partitionProto.PartitionKey] = inMemPartition
 	}
 
 	// Insert vectors into the in-memory store.
@@ -507,6 +697,17 @@ func LoadInMemoryStore(data []byte) (*InMemoryStore, error) {
 	}
 
 	return inMemStore, nil
+}
+
+func (s *InMemoryStore) getPartition(partitionKey PartitionKey) (*inMemoryPartition, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	partition, ok := s.mu.partitions[partitionKey]
+	if !ok {
+		return nil, ErrPartitionNotFound
+	}
+	return partition, nil
 }
 
 // reportPartitionSizeLocked updates the vectors per partition statistic. It is
@@ -522,23 +723,4 @@ func (s *InMemoryStore) reportPartitionSizeLocked(count int) {
 		s.mu.stats.VectorsPerPartition = (1 - storeStatsAlpha) * s.mu.stats.VectorsPerPartition
 		s.mu.stats.VectorsPerPartition += storeStatsAlpha * float64(count)
 	}
-}
-
-// acquireTxnLock acquires a data or partition lock within the scope of the
-// given transaction. It is an error to attempt to acquire a partition lock if
-// the transaction already holds a data lock.
-func (s *InMemoryStore) acquireTxnLock(txn Txn, lock lockType, updating bool) {
-	inMemTxn := txn.(*inMemoryTxn)
-	if inMemTxn.lock == noLock {
-		switch lock {
-		case dataLock:
-			s.txnLock.RLock()
-		case partitionLock:
-			s.txnLock.Lock()
-		}
-		inMemTxn.lock = lock
-	} else if inMemTxn.lock == dataLock && lock == partitionLock { // nolint:deferunlockcheck
-		panic(errors.AssertionFailedf("cannot upgrade from data to partition lock"))
-	}
-	inMemTxn.updated = updating
 }

@@ -11,6 +11,8 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"os"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -263,12 +265,12 @@ func (s *testState) Insert(d *datadriven.TestData) string {
 
 		// Insert block of vectors within the scope of a transaction.
 		insertBlock := func(start, end int) {
-			txn := beginTransaction(s.Ctx, s.T, s.InMemStore)
 			for j := start; j < end; j++ {
+				txn := beginTransaction(s.Ctx, s.T, s.InMemStore)
 				s.InMemStore.InsertVector(txn, childKeys[j].PrimaryKey, vectors.At(j))
 				require.NoError(s.T, s.Index.Insert(s.Ctx, txn, vectors.At(j), childKeys[j].PrimaryKey))
+				commitTransaction(s.Ctx, s.T, s.InMemStore, txn)
 			}
-			commitTransaction(s.Ctx, s.T, s.InMemStore, txn)
 		}
 
 		// If background fixups are not enabled, do inserts in series, since the
@@ -283,6 +285,12 @@ func (s *testState) Insert(d *datadriven.TestData) string {
 			// Run inserts in parallel.
 			wait.Add(1)
 			go func(i int) {
+				if r := recover(); r != nil {
+					os.Exit(1)
+					//fmt.Println(r)
+					//panic("here now")
+					//fmt.Println("Recovered from panic:", r)
+				}
 				insertBlock(i, end)
 				wait.Done()
 			}(i)
@@ -562,6 +570,11 @@ func beginTransaction(ctx context.Context, t *testing.T, store vecstore.Store) v
 	return txn
 }
 
+func abortTransaction(ctx context.Context, t *testing.T, store vecstore.Store, txn vecstore.Txn) {
+	err := store.AbortTransaction(ctx, txn)
+	require.NoError(t, err)
+}
+
 func commitTransaction(ctx context.Context, t *testing.T, store vecstore.Store, txn vecstore.Txn) {
 	err := store.CommitTransaction(ctx, txn)
 	require.NoError(t, err)
@@ -589,4 +602,140 @@ func findMAP(prediction, truth []vecstore.PrimaryKey) float64 {
 		}
 	}
 	return intersect / float64(len(truth))
+}
+
+func TestVectorIndexConcurrency(t *testing.T) {
+	// Create index.
+	ctx := context.Background()
+	stopper := stop.NewStopper()
+	defer stopper.Stop(ctx)
+
+	// Load features.
+	vectors := testutils.LoadFeatures(t, 10000)
+	vectors.SplitAt(1000)
+	primaryKeys := make([]vecstore.PrimaryKey, vectors.Count)
+	for i := 0; i < vectors.Count; i++ {
+		primaryKeys[i] = vecstore.PrimaryKey(fmt.Sprintf("vec%d", i))
+	}
+
+	for i := 0; i < 500; i++ {
+		fmt.Println(i)
+		options := VectorIndexOptions{
+			MinPartitionSize: 2,
+			MaxPartitionSize: 8,
+			BaseBeamSize:     2,
+			QualitySamples:   4,
+			Seed:             42,
+		}
+		store := vecstore.NewInMemoryStore(vectors.Dims, options.Seed)
+		quantizer := quantize.NewRaBitQuantizer(vectors.Dims, options.Seed)
+		index, err := NewVectorIndex(ctx, store, quantizer, &options, stopper)
+		require.NoError(t, err)
+
+		buildIndex(ctx, t, store, index, vectors, primaryKeys)
+
+		vectorCount := validateIndex(ctx, t, store)
+		if vectorCount != vectors.Count {
+			panic("wrong number of vectors")
+		}
+	}
+}
+
+func buildIndex(
+	ctx context.Context,
+	t *testing.T,
+	store *vecstore.InMemoryStore,
+	index *VectorIndex,
+	vectors vector.Set,
+	primaryKeys []vecstore.PrimaryKey,
+) {
+	// Insert block of vectors within the scope of a transaction.
+	insertBlock := func(start, end int) {
+		for i := start; i < end; i++ {
+			for {
+				txn := beginTransaction(ctx, t, store)
+				err := index.Insert(ctx, txn, vectors.At(i), primaryKeys[i])
+				if err != nil {
+					abortTransaction(ctx, t, store, txn)
+					continue
+				}
+				store.InsertVector(txn, primaryKeys[i], vectors.At(i))
+				commitTransaction(ctx, t, store, txn)
+				break
+			}
+		}
+	}
+
+	// Insert vectors into the store on multiple goroutines.
+	var wait sync.WaitGroup
+	procs := runtime.GOMAXPROCS(-1)
+	countPerProc := (vectors.Count + procs) / procs
+	blockSize := index.Options().MinPartitionSize
+	for i := 0; i < vectors.Count; i += countPerProc {
+		end := min(i+countPerProc, vectors.Count)
+		wait.Add(1)
+		go func(start, end int) {
+			// Break vector group into individual transactions that each insert a
+			// block of vectors. Run any pending fixups after each block.
+			for j := start; j < end; j += blockSize {
+				insertBlock(j, min(j+blockSize, end))
+				index.ProcessFixups()
+			}
+
+			wait.Done()
+		}(i, end)
+	}
+	wait.Wait()
+}
+
+func validateIndex(ctx context.Context, t *testing.T, store *vecstore.InMemoryStore) int {
+	txn := beginTransaction(ctx, t, store)
+	defer commitTransaction(ctx, t, store, txn)
+
+	vectorCount := 0
+	partitionKeys := []vecstore.PartitionKey{vecstore.RootKey}
+	for {
+		// Get all child keys for next level.
+		var childKeys []vecstore.ChildKey
+		for _, key := range partitionKeys {
+			partition, err := store.GetPartition(ctx, txn, key)
+			if err != nil {
+				panic(err)
+			}
+			require.NoError(t, err)
+			childKeys = append(childKeys, partition.ChildKeys()...)
+		}
+
+		if len(childKeys) == 0 {
+			break
+		}
+
+		// Verify full vectors exist for the level.
+		refs := make([]vecstore.VectorWithKey, len(childKeys))
+		for i := range childKeys {
+			refs[i].Key = childKeys[i]
+		}
+		err := store.GetFullVectors(ctx, txn, refs)
+		require.NoError(t, err)
+		for i := range refs {
+			if refs[i].Vector == nil {
+				panic("vector is nil")
+			}
+			require.NotNil(t, refs[i].Vector)
+		}
+
+		// If this is not the leaf level, then process the next level.
+		if childKeys[0].PrimaryKey == nil {
+			partitionKeys = make([]vecstore.PartitionKey, len(childKeys))
+			for i := range childKeys {
+				partitionKeys[i] = childKeys[i].PartitionKey
+			}
+		} else {
+			// This is the leaf level, so count vectors and end.
+			vectorCount += len(childKeys)
+			break
+		}
+	}
+
+	return vectorCount
 }

@@ -1,0 +1,87 @@
+# ----------
+# Basic merge cases.
+# ----------
+new-index min-partition-size=2 max-partition-size=4 beam-size=2
+vec1: (0, -1)
+vec2: (3, 10)
+vec3: (-2, 8)
+vec4: (2, 7)
+vec5: (3, 6)
+vec6: (14, 1)
+vec7: (0, 0)
+vec8: (1, 4)
+vec9: (5, 2)
+----
+• 1 (4.625, 5.25)
+│
+├───• 2 (8.5, 5.5)
+│   │
+│   ├───• vec6 (14, 1)
+│   ├───• vec2 (3, 10)
+│   └───• vec9 (5, 2)
+│
+├───• 4 (0, -0.5)
+│   │
+│   ├───• vec7 (0, 0)
+│   └───• vec1 (0, -1)
+│
+└───• 5 (1, 6.25)
+    │
+    ├───• vec5 (3, 6)
+    ├───• vec4 (2, 7)
+    ├───• vec3 (-2, 8)
+    └───• vec8 (1, 4)
+
+# Delete vectors from a partition, causing it to drop below min-partition-size.
+delete
+vec5
+vec3
+vec8
+vec7
+----
+• 1 (4.625, 5.25)
+│
+├───• 2 (8.5, 5.5)
+│   │
+│   ├───• vec6 (14, 1)
+│   ├───• vec2 (3, 10)
+│   ├───• vec9 (5, 2)
+│   └───• vec4 (2, 7)
+│
+└───• 4 (0, -0.5)
+    │
+    └───• vec1 (0, -1)
+
+# Partition was merged (and then split).
+search
+(0, -1)
+----
+vec1: 0 (centroid=0.5)
+5 leaf vectors, 7 vectors, 5 full vectors, 3 partitions
+
+format-tree
+----
+• 1 (4.625, 5.25)
+│
+├───• 6 (1.6667, 5.3333)
+│   │
+│   ├───• vec1 (0, -1)
+│   ├───• vec2 (3, 10)
+│   └───• vec4 (2, 7)
+│
+└───• 7 (9.5, 1.5)
+    │
+    ├───• vec9 (5, 2)
+    └───• vec6 (14, 1)
+
+# Delete all but one vector and ensure that remaining partition is merged into
+# the root.
+delete
+vec1
+vec4
+vec6
+vec9
+----
+• 1 (3, 10)
+│
+└───• vec2 (3, 10)

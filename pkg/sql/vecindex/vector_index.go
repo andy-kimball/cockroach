@@ -8,6 +8,7 @@ package vecindex
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"math"
 	"strconv"
 	"strings"
@@ -263,7 +264,7 @@ func (vi *VectorIndex) Insert(
 
 	// Insert the vector into the secondary index.
 	childKey := vecstore.ChildKey{PrimaryKey: key}
-	return vi.insertHelper(&parentSearchCtx, childKey, true /* allowRetry */)
+	return vi.insertHelper(&parentSearchCtx, childKey)
 }
 
 // Delete attempts to remove a vector from the index, given its value and
@@ -304,7 +305,7 @@ func (vi *VectorIndex) Delete(
 	for {
 		searchCtx.Options.BaseBeamSize = baseBeamSize
 
-		err := vi.searchHelper(&searchCtx, &searchSet, true /* allowRetry */)
+		err := vi.searchHelper(&searchCtx, &searchSet)
 		if err != nil {
 			return err
 		}
@@ -349,19 +350,19 @@ func (vi *VectorIndex) Search(
 	vi.quantizer.RandomizeVector(ctx, queryVector, tempRandomized, false /* invert */)
 	searchCtx.Randomized = tempRandomized
 
-	return vi.searchHelper(&searchCtx, searchSet, true /* allowRetry */)
+	return vi.searchHelper(&searchCtx, searchSet)
 }
 
 // insertHelper looks for the best partition in which to add the vector and then
 // adds the vector to that partition.
 func (vi *VectorIndex) insertHelper(
-	parentSearchCtx *searchContext, childKey vecstore.ChildKey, allowRetry bool,
+	parentSearchCtx *searchContext, childKey vecstore.ChildKey,
 ) error {
 	// The partition in which to insert the vector is at the parent level
 	// (level+1). Return enough results to have good candidates for inserting
 	// the vector into another partition.
 	searchSet := vecstore.SearchSet{MaxResults: 1}
-	err := vi.searchHelper(parentSearchCtx, &searchSet, allowRetry)
+	err := vi.searchHelper(parentSearchCtx, &searchSet)
 	if err != nil {
 		return err
 	}
@@ -370,15 +371,8 @@ func (vi *VectorIndex) insertHelper(
 	partitionKey := results[0].ChildKey.PartitionKey
 	_, err = vi.addToPartition(parentSearchCtx.Ctx, parentSearchCtx.Txn, parentPartitionKey,
 		partitionKey, parentSearchCtx.Randomized, childKey)
-	if errors.Is(err, vecstore.ErrPartitionNotFound) {
-		// Retry the insert after root partition cache invalidation.
-		if !allowRetry {
-			// This indicates index corruption, since it should only require a
-			// single retry to handle the case where the root partition is stale.
-			// There should be no other cases that a partition cannot be found.
-			panic(errors.AssertionFailedf("partition cannot be found even though root is not stale"))
-		}
-		return vi.insertHelper(parentSearchCtx, childKey, false /* allowRetry */)
+	if errors.Is(err, vecstore.ErrRestartOperation) {
+		return vi.insertHelper(parentSearchCtx, childKey)
 	} else if err != nil {
 		return err
 	}
@@ -436,9 +430,7 @@ func (vi *VectorIndex) removeFromPartition(
 // data vectors are the quantized representation of the original vectors that
 // were inserted into the tree. The original, full-size vectors are fetched from
 // the primary index and used to re-rank candidate search results.
-func (vi *VectorIndex) searchHelper(
-	searchCtx *searchContext, searchSet *vecstore.SearchSet, allowRetry bool,
-) error {
+func (vi *VectorIndex) searchHelper(searchCtx *searchContext, searchSet *vecstore.SearchSet) error {
 	// Return enough search results to:
 	// 1. Ensure that the number of results requested by the caller is respected.
 	// 2. Ensure that there are enough samples for calculating stats.
@@ -468,8 +460,9 @@ func (vi *VectorIndex) searchHelper(
 		return nil
 	}
 
+	results := subSearchSet.PopUnsortedResults()
 	for {
-		results := subSearchSet.PopUnsortedResults()
+		//results := subSearchSet.PopUnsortedResults()
 		if len(results) == 0 && searchLevel > vecstore.LeafLevel {
 			// This should never happen, as it means that interior partition(s)
 			// have no children. The vector deletion logic should prevent that.
@@ -569,18 +562,31 @@ func (vi *VectorIndex) searchHelper(
 		// level (leaf-level partitions do not have children).
 		results = results[:min(beamSize, len(results))]
 		_, err = vi.searchChildPartitions(searchCtx, &subSearchSet, results)
-		if errors.Is(err, vecstore.ErrPartitionNotFound) {
+		if errors.Is(err, vecstore.ErrRestartOperation) {
 			// The cached root partition must be stale, so retry the search.
-			if !allowRetry {
-				// This indicates index corruption, since it should only require
-				// a single retry to handle the case where the root partition is
-				// stale. There should be no other cases that a partition cannot
-				// be found.
-				panic(errors.AssertionFailedf("partition cannot be found even though root is not stale"))
-			}
-			return vi.searchHelper(searchCtx, searchSet, false /* allowRetry */)
+			return vi.searchHelper(searchCtx, searchSet)
 		} else if err != nil {
 			return err
+		}
+
+		results = subSearchSet.PopUnsortedResults()
+		for i := range results {
+			if searchLevel == vecstore.LeafLevel {
+				if results[i].ChildKey.PartitionKey != 0 {
+					fmt.Println("here")
+				}
+			} else {
+				if results[i].ChildKey.PartitionKey == 0 {
+					fmt.Println("here")
+				}
+			}
+		}
+
+		if len(results) == 0 && searchLevel > vecstore.LeafLevel {
+			// This should never happen, as it means that interior partition(s)
+			// have no children. The vector deletion logic should prevent that.
+			panic(errors.AssertionFailedf(
+				"interior partition(s) on level %d has no children", searchLevel))
 		}
 	}
 
