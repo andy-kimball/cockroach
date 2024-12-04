@@ -29,6 +29,9 @@ func TestInMemoryStore(t *testing.T) {
 	childKey40 := ChildKey{PartitionKey: 40}
 	childKey50 := ChildKey{PartitionKey: 50}
 	childKey60 := ChildKey{PartitionKey: 60}
+	childKey70 := ChildKey{PartitionKey: 70}
+	childKey80 := ChildKey{PartitionKey: 80}
+	childKey90 := ChildKey{PartitionKey: 90}
 
 	store := NewInMemoryStore(2, 42)
 	quantizer := quantize.NewUnQuantizer(2)
@@ -217,7 +220,7 @@ func TestInMemoryStore(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, PartitionKey(3), partitionKey2)
 
-		searchSet := SearchSet{MaxResults: 2}
+		searchSet := SearchSet{MaxResults: 3}
 		partitionCounts := []int{0, 0}
 		level, err := store.SearchPartitions(
 			ctx, txn, []PartitionKey{partitionKey1, partitionKey2}, vector.T{3, 1}, &searchSet, partitionCounts)
@@ -225,8 +228,49 @@ func TestInMemoryStore(t *testing.T) {
 		require.Equal(t, Level(1), level)
 		result4 := SearchResult{QuerySquaredDistance: 4, ErrorBound: 0, CentroidDistance: 1.41, ParentPartitionKey: 2, ChildKey: childKey40}
 		result5 := SearchResult{QuerySquaredDistance: 5, ErrorBound: 0, CentroidDistance: 2.24, ParentPartitionKey: 2, ChildKey: childKey10}
-		require.Equal(t, SearchResults{result4, result5}, roundResults(searchSet.PopResults(), 2))
+		result6 := SearchResult{QuerySquaredDistance: 5, ErrorBound: 0, CentroidDistance: 4.61, ParentPartitionKey: 3, ChildKey: childKey50}
+		require.Equal(t, SearchResults{result4, result5, result6}, roundResults(searchSet.PopResults(), 2))
 		require.Equal(t, []int{3, 2}, partitionCounts)
+	})
+
+	t.Run("move vectors between partitions", func(t *testing.T) {
+		txn := beginTransaction(ctx, t, store)
+		defer commitTransaction(ctx, t, store, txn)
+
+		// Insert 2 new partitions at a non-leaf level.
+		vectors4 := vector.MakeSet(2)
+		vectors4.Add(vector.T{1, 2})
+		vectors4.Add(vector.T{3, 4})
+		quantizedSet := quantizer.Quantize(ctx, &vectors4)
+		partition4 := NewPartition(quantizer, quantizedSet, []ChildKey{childKey70, childKey80}, SecondLevel)
+		partitionKey4, err := store.InsertPartition(ctx, txn, partition4)
+		require.NoError(t, err)
+		require.Equal(t, PartitionKey(4), partitionKey4)
+
+		vectors5 := vector.MakeSet(2)
+		vectors5.Add(vector.T{5, 6})
+		quantizedSet = quantizer.Quantize(ctx, &vectors5)
+		partition5 := NewPartition(quantizer, quantizedSet, []ChildKey{childKey90}, SecondLevel)
+		partitionKey5, err := store.InsertPartition(ctx, txn, partition5)
+		require.NoError(t, err)
+		require.Equal(t, PartitionKey(5), partitionKey5)
+
+		// Move vector from partition 4 to partition 5.
+		sourceCount, destCount, err := store.MoveToPartition(
+			ctx, txn, 4, 5, vector.T{1, 2}, childKey70)
+		require.NoError(t, err)
+		require.Equal(t, 1, sourceCount)
+		require.Equal(t, 2, destCount)
+
+		partition5, err = store.GetPartition(ctx, txn, 5)
+		require.NoError(t, err)
+		require.NotEqual(t, -1, partition5.Find(childKey70))
+
+		// Try to move last vector from partition 4, which should fail because
+		// it would leave an empty non-leaf partition.
+		_, _, err = store.MoveToPartition(
+			ctx, txn, 4, 5, vector.T{3, 4}, childKey80)
+		require.ErrorIs(t, err, ErrMoveNotAllowed)
 	})
 
 	t.Run("delete full vector", func(t *testing.T) {

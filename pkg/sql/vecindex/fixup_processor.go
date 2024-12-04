@@ -333,16 +333,60 @@ func (fp *fixupProcessor) addFixup(ctx context.Context, fixup fixup) {
 }
 
 // splitPartition splits the partition with the given key and parent key. This
-// runs in its own transaction. For a given index, there is at most one split
-// happening per SQL process. However, there can be multiple SQL processes, each
-// running a split.
+// runs in its own set of transactions. The initial transaction replaces the
+// splitting transaction with two new sibling partitions, each containing
+// roughly one-half the vectors. Additional transactions move vectors in or out
+// of those siblings in order to improve index quality.
 func (fp *fixupProcessor) splitPartition(
 	ctx context.Context, parentPartitionKey vecstore.PartitionKey, partitionKey vecstore.PartitionKey,
 ) (err error) {
-	// Run the split within a transaction.
-	txn, err := fp.index.store.BeginTransaction(ctx)
-	if err != nil {
+	split := splitData{
+		ParentPartitionKey: parentPartitionKey,
+		PartitionKey:       partitionKey,
+	}
+
+	// Replace the splitting partition with two new sibling partitions that each
+	// contain roughly half of its vectors.
+	var ok bool
+	ok, err = fp.performSplit(ctx, &split)
+	if !ok {
+		// No-op if the split failed with an error or if it was not performed due
+		// to starting conditions changing (e.g. it was already split by another
+		// process).
 		return err
+	}
+
+	// Improve quality of index by moving vectors to and from the new sibling
+	// partitions, such that each vector is in the partition with the closest
+	// centroid.
+	if split.ParentPartition != nil {
+		// Move any vectors to sibling partitions that have closer centroids.
+		if err = fp.moveSplitVectorsToSiblings(ctx, &split, &split.Left); err != nil {
+			return err
+		}
+		if err = fp.moveSplitVectorsToSiblings(ctx, &split, &split.Right); err != nil {
+			return err
+		}
+
+		// Move any vectors at the same level that are closer to the new split
+		// centroids than they are to their own centroids.
+		if err = fp.moveVectorsFromSiblings(ctx, &split, &split.Left); err != nil {
+			return err
+		}
+		if err = fp.moveVectorsFromSiblings(ctx, &split, &split.Right); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (fp *fixupProcessor) performSplit(ctx context.Context, split *splitData) (ok bool, err error) {
+	// Run the split within a transaction.
+	var txn vecstore.Txn
+	txn, err = fp.index.store.BeginTransaction(ctx)
+	if err != nil {
+		return false, err
 	}
 	defer func() {
 		if err == nil {
@@ -353,191 +397,168 @@ func (fp *fixupProcessor) splitPartition(
 	}()
 
 	// Get the partition to be split from the store.
-	partition, err := fp.index.store.GetPartition(ctx, txn, partitionKey)
+	split.Partition, err = fp.index.store.GetPartition(ctx, txn, split.PartitionKey)
 	if errors.Is(err, vecstore.ErrPartitionNotFound) {
-		log.VEventf(ctx, 2, "partition %d no longer exists, do not split", partitionKey)
-		return nil
+		log.VEventf(ctx, 2, "partition %d no longer exists, do not split", split.PartitionKey)
+		return false, nil
 	} else if err != nil {
-		return errors.Wrapf(err, "getting partition %d to split", partitionKey)
+		return false, errors.Wrapf(err, "getting partition %d to split", split.PartitionKey)
 	}
 
 	// Load the parent of the partition to split.
-	var parentPartition *vecstore.Partition
-	if partitionKey != vecstore.RootKey {
-		parentPartition, err = fp.index.store.GetPartition(ctx, txn, parentPartitionKey)
+	if split.PartitionKey != vecstore.RootKey {
+		split.ParentPartition, err = fp.index.store.GetPartition(ctx, txn, split.ParentPartitionKey)
 		if errors.Is(err, vecstore.ErrPartitionNotFound) {
 			log.VEventf(ctx, 2, "parent partition %d of partition %d no longer exists, do not split",
-				parentPartitionKey, partitionKey)
-			return nil
+				split.ParentPartitionKey, split.PartitionKey)
+			return false, nil
 		} else if err != nil {
-			return errors.Wrapf(err, "getting parent %d of partition %d to split",
-				parentPartitionKey, partitionKey)
+			return false, errors.Wrapf(err, "getting parent %d of partition %d to split",
+				split.ParentPartitionKey, split.PartitionKey)
 		}
 
-		// Remove the splitting partition from the parent partition.
-		if !parentPartition.ReplaceWithLastByKey(vecstore.ChildKey{PartitionKey: partitionKey}) {
+		// Remove the splitting partition from the in-memory parent partition.
+		if !split.ParentPartition.ReplaceWithLastByKey(vecstore.ChildKey{PartitionKey: split.PartitionKey}) {
 			log.VEventf(ctx, 2, "partition %d is no longer child of partition %d, do not split",
-				partitionKey, parentPartitionKey)
-			return nil
+				split.PartitionKey, split.ParentPartitionKey)
+			return false, nil
 		}
 	}
 
 	// Get the full vectors for the splitting partition's children.
-	vectors, err := fp.getFullVectorsForPartition(ctx, txn, partitionKey, partition)
+	split.Vectors, err = fp.getFullVectorsForPartition(ctx, txn, split.PartitionKey, split.Partition)
 	if err != nil {
-		return errors.Wrapf(err, "getting full vectors for split of partition %d", partitionKey)
+		return false, errors.Wrapf(err,
+			"getting full vectors for split of partition %d", split.PartitionKey)
 	}
-	if vectors.Count < 2 {
+	if split.Vectors.Count < 2 {
 		// This could happen if the partition had tons of dangling references that
 		// need to be cleaned up.
 		// TODO(andyk): We might consider cleaning up references and/or rewriting
 		// the partition.
 		log.VEventf(ctx, 2, "partition %d has only %d live vectors, do not split",
-			partitionKey, vectors.Count)
-		return nil
+			split.PartitionKey, split.Vectors.Count)
+		return false, nil
 	}
 
-	// Determine which partition children should go into the left split partition
-	// and which should go into the right split partition.
-	tempOffsets := fp.workspace.AllocUint64s(vectors.Count)
-	defer fp.workspace.FreeUint64s(tempOffsets)
-	kmeans := BalancedKmeans{Workspace: &fp.workspace, Rand: fp.rng}
-	tempLeftOffsets, tempRightOffsets := kmeans.Compute(&vectors, tempOffsets)
+	// Divide vectors from the splitting partition into new left and right sibling
+	// partitions.
+	fp.assignVectorsForSplit(ctx, split)
 
-	leftSplit, rightSplit := fp.splitPartitionData(
-		ctx, partition, vectors, tempLeftOffsets, tempRightOffsets)
+	log.VEventf(ctx, 2,
+		"splitting partition %d (%d vectors) into left partition %d "+
+			"(%d vectors) and right partition %d (%d vectors)",
+		split.PartitionKey, len(split.Partition.ChildKeys()),
+		split.Left.PartitionKey, len(split.Left.Partition.ChildKeys()),
+		split.Right.PartitionKey, len(split.Right.Partition.ChildKeys()))
 
-	if parentPartition != nil {
-		// De-link the splitting partition from its parent partition.
-		childKey := vecstore.ChildKey{PartitionKey: partitionKey}
-		count, err := fp.index.removeFromPartition(ctx, txn, parentPartitionKey, childKey)
+	if split.ParentPartition != nil {
+		// De-link the splitting partition from its parent partition in the store.
+		childKey := vecstore.ChildKey{PartitionKey: split.PartitionKey}
+		_, err = fp.index.removeFromPartition(ctx, txn, split.ParentPartitionKey, childKey)
 		if err != nil {
-			return errors.Wrapf(err, "removing splitting partition %d from its parent %d",
-				partitionKey, parentPartitionKey)
+			return false, errors.Wrapf(err, "removing splitting partition %d from its parent %d",
+				split.PartitionKey, split.ParentPartitionKey)
 		}
 
-		if count != 0 {
-			// Move any vectors to sibling partitions that have closer centroids.
-			// Lazily get parent vectors only if they're actually needed.
-			var parentVectors vector.Set
-			getParentVectors := func() (vector.Set, error) {
-				if parentVectors.Dims != 0 {
-					return parentVectors, nil
-				}
-				var err error
-				parentVectors, err = fp.getFullVectorsForPartition(
-					ctx, txn, parentPartitionKey, parentPartition)
-				return parentVectors, err
-			}
+		// Search for vectors at the same level that are closest to the centroids
+		// of the new sibling partitions, as those vectors may need to be moved.
+		// Do this only after de-linking the splitting partition to avoid finding
+		// vectors in the new sibling partitions themselves.
+		if err = fp.findClosestVectors(ctx, txn, &split.Left); err != nil {
+			return false, errors.Wrapf(err, "finding closest vectors in left sibling partition %d",
+				split.Left.PartitionKey)
+		}
 
-			err = fp.moveVectorsToSiblings(
-				ctx, txn, parentPartitionKey, parentPartition, getParentVectors, partitionKey, &leftSplit)
-			if err != nil {
-				return err
-			}
-			err = fp.moveVectorsToSiblings(
-				ctx, txn, parentPartitionKey, parentPartition, getParentVectors, partitionKey, &rightSplit)
-			if err != nil {
-				return err
-			}
-
-			// Move any vectors at the same level that are closer to the new split
-			// centroids than they are to their own centroids.
-			if err = fp.linkNearbyVectors(ctx, txn, partitionKey, leftSplit.Partition); err != nil {
-				return err
-			}
-			if err = fp.linkNearbyVectors(ctx, txn, partitionKey, rightSplit.Partition); err != nil {
-				return err
-			}
+		if err = fp.findClosestVectors(ctx, txn, &split.Right); err != nil {
+			return false, errors.Wrapf(err, "finding closest vectors in right sibling partition %d",
+				split.Right.PartitionKey)
 		}
 	}
 
 	// Insert the two new partitions into the index. This only adds their data
 	// (and metadata) for the partition - they're not yet linked into the K-means
 	// tree.
-	leftPartitionKey, err := fp.index.store.InsertPartition(ctx, txn, leftSplit.Partition)
+	split.Left.PartitionKey, err = fp.index.store.InsertPartition(ctx, txn, split.Left.Partition)
 	if err != nil {
-		return errors.Wrapf(err, "creating left partition for split of partition %d", partitionKey)
+		return false, errors.Wrapf(err,
+			"creating left partition for split of partition %d", split.PartitionKey)
 	}
-	rightPartitionKey, err := fp.index.store.InsertPartition(ctx, txn, rightSplit.Partition)
+	split.Right.PartitionKey, err = fp.index.store.InsertPartition(ctx, txn, split.Right.Partition)
 	if err != nil {
-		return errors.Wrapf(err, "creating right partition for split of partition %d", partitionKey)
+		return false, errors.Wrapf(err,
+			"creating right partition for split of partition %d", split.PartitionKey)
 	}
-
-	log.VEventf(ctx, 2,
-		"splitting partition %d (%d vectors) into left partition %d "+
-			"(%d vectors) and right partition %d (%d vectors)",
-		partitionKey, len(partition.ChildKeys()),
-		leftPartitionKey, len(leftSplit.Partition.ChildKeys()),
-		rightPartitionKey, len(rightSplit.Partition.ChildKeys()))
 
 	// Now link the new partitions into the K-means tree.
-	if partitionKey == vecstore.RootKey {
+	if split.PartitionKey == vecstore.RootKey {
 		// Add a new level to the tree by setting a new root partition that points
 		// to the two new partitions.
 		centroids := vector.MakeSet(fp.index.rootQuantizer.GetRandomDims())
 		centroids.EnsureCapacity(2)
-		centroids.Add(leftSplit.Partition.Centroid())
-		centroids.Add(rightSplit.Partition.Centroid())
+		centroids.Add(split.Left.Partition.Centroid())
+		centroids.Add(split.Right.Partition.Centroid())
 		quantizedSet := fp.index.rootQuantizer.Quantize(ctx, &centroids)
 		childKeys := []vecstore.ChildKey{
-			{PartitionKey: leftPartitionKey},
-			{PartitionKey: rightPartitionKey},
+			{PartitionKey: split.Left.PartitionKey},
+			{PartitionKey: split.Right.PartitionKey},
 		}
 		rootPartition := vecstore.NewPartition(
-			fp.index.rootQuantizer, quantizedSet, childKeys, partition.Level()+1)
+			fp.index.rootQuantizer, quantizedSet, childKeys, split.Partition.Level()+1)
 		if err = fp.index.store.SetRootPartition(ctx, txn, rootPartition); err != nil {
-			return errors.Wrapf(err, "setting new root for split of partition %d", partitionKey)
+			return false, errors.Wrapf(err,
+				"setting new root for split of partition %d", split.PartitionKey)
 		}
 
 		log.VEventf(ctx, 2, "created new root level with child partitions %d and %d",
-			leftPartitionKey, rightPartitionKey)
+			split.Left.PartitionKey, split.Right.PartitionKey)
 	} else {
 		// Link the two new partitions into the K-means tree by inserting them
 		// into the parent level. This can trigger a further split, this time of
 		// the parent level.
 		searchCtx := fp.reuseSearchContext(ctx, txn)
-		searchCtx.Level = parentPartition.Level() + 1
+		searchCtx.Level = split.ParentPartition.Level() + 1
 
-		searchCtx.Randomized = leftSplit.Partition.Centroid()
-		childKey := vecstore.ChildKey{PartitionKey: leftPartitionKey}
+		searchCtx.Randomized = split.Left.Partition.Centroid()
+		childKey := vecstore.ChildKey{PartitionKey: split.Left.PartitionKey}
 		err = fp.index.insertHelper(searchCtx, childKey, true /* allowRetry */)
 		if err != nil {
-			return errors.Wrapf(err, "inserting left partition for split of partition %d", partitionKey)
+			return false, errors.Wrapf(err,
+				"inserting left partition for split of partition %d", split.PartitionKey)
 		}
 
-		searchCtx.Randomized = rightSplit.Partition.Centroid()
-		childKey = vecstore.ChildKey{PartitionKey: rightPartitionKey}
+		searchCtx.Randomized = split.Right.Partition.Centroid()
+		childKey = vecstore.ChildKey{PartitionKey: split.Right.PartitionKey}
 		err = fp.index.insertHelper(searchCtx, childKey, true /* allowRetry */)
 		if err != nil {
-			return errors.Wrapf(err, "inserting right partition for split of partition %d", partitionKey)
+			return false, errors.Wrapf(err,
+				"inserting right partition for split of partition %d", split.PartitionKey)
 		}
 
 		// Delete the old partition.
-		if err = fp.index.store.DeletePartition(ctx, txn, partitionKey); err != nil {
-			return errors.Wrapf(err, "deleting partition %d for split", partitionKey)
+		if err = fp.index.store.DeletePartition(ctx, txn, split.PartitionKey); err != nil {
+			return false, errors.Wrapf(err, "deleting partition %d for split", split.PartitionKey)
 		}
 	}
 
-	return nil
+	return true, nil
 }
 
-// Split the given partition into left and right partitions, according to the
-// provided left and right offsets. The offsets are expected to be in sorted
-// order and refer to the corresponding vectors and child keys in the splitting
-// partition.
-// NOTE: The vectors set will be updated in-place, via a partial sort that moves
-// vectors in the left partition to the left side of the set. However, the split
-// partition is not modified.
-func (fp *fixupProcessor) splitPartitionData(
-	ctx context.Context,
-	splitPartition *vecstore.Partition,
-	vectors vector.Set,
-	leftOffsets, rightOffsets []uint64,
-) (leftSplit, rightSplit splitData) {
+// assignVectorsForSplit divides the splitting partition's vectors into new left
+// and right sibling partitions. It updates split.Left and split.Right with
+// information about the new partitions. It clears split.Vectors after
+// reordering it.
+func (fp *fixupProcessor) assignVectorsForSplit(ctx context.Context, split *splitData) {
+	// Determine which partition children should go into the left split partition
+	// and which should go into the right split partition.
+	tempOffsets := fp.workspace.AllocUint64s(split.Vectors.Count)
+	defer fp.workspace.FreeUint64s(tempOffsets)
+	kmeans := BalancedKmeans{Workspace: &fp.workspace, Rand: fp.rng}
+	tempLeftOffsets, tempRightOffsets := kmeans.Compute(&split.Vectors, tempOffsets)
+
 	// Copy centroid distances and child keys so they can be split.
-	centroidDistances := slices.Clone(splitPartition.QuantizedSet().GetCentroidDistances())
-	childKeys := slices.Clone(splitPartition.ChildKeys())
+	centroidDistances := slices.Clone(split.Partition.QuantizedSet().GetCentroidDistances())
+	childKeys := slices.Clone(split.Partition.ChildKeys())
 
 	tempVector := fp.workspace.AllocFloats(fp.index.quantizer.GetRandomDims())
 	defer fp.workspace.FreeFloats(tempVector)
@@ -549,25 +570,25 @@ func (fp *fixupProcessor) splitPartitionData(
 	// list and the beginning of the right list. Therefore, the algorithm just
 	// needs to iterate over those offsets and swap the positions of the
 	// referenced vectors.
-	li := len(leftOffsets) - 1
+	li := len(tempLeftOffsets) - 1
 	ri := 0
 
 	var rightToLeft, leftToRight vector.T
 	for li >= 0 {
-		left := int(leftOffsets[li])
-		if left < len(leftOffsets) {
+		left := int(tempLeftOffsets[li])
+		if left < len(tempLeftOffsets) {
 			break
 		}
 
-		right := int(rightOffsets[ri])
-		if right >= len(leftOffsets) {
+		right := int(tempRightOffsets[ri])
+		if right >= len(tempLeftOffsets) {
 			panic(errors.AssertionFailedf(
 				"expected equal number of left and right offsets that need to be swapped"))
 		}
 
 		// Swap vectors.
-		rightToLeft = vectors.At(left)
-		leftToRight = vectors.At(right)
+		rightToLeft = split.Vectors.At(left)
+		leftToRight = split.Vectors.At(right)
 		copy(tempVector, rightToLeft)
 		copy(rightToLeft, leftToRight)
 		copy(leftToRight, tempVector)
@@ -581,114 +602,37 @@ func (fp *fixupProcessor) splitPartitionData(
 		ri++
 	}
 
-	leftVectorSet := vectors
-	rightVectorSet := leftVectorSet.SplitAt(len(leftOffsets))
+	leftVectorSet := split.Vectors
+	rightVectorSet := leftVectorSet.SplitAt(len(tempLeftOffsets))
 
-	leftCentroidDistances := centroidDistances[:len(leftOffsets):len(leftOffsets)]
-	leftChildKeys := childKeys[:len(leftOffsets):len(leftOffsets)]
-	leftSplit.Init(ctx, fp.index.quantizer, leftVectorSet,
-		leftCentroidDistances, leftChildKeys, splitPartition.Level())
+	// Clear the splitting vectors set, since it has been reordered and should
+	// not be used after this point.
+	split.Vectors = vector.Set{}
 
-	rightCentroidDistances := centroidDistances[len(leftOffsets):]
-	rightChildKeys := childKeys[len(leftOffsets):]
-	rightSplit.Init(ctx, fp.index.quantizer, rightVectorSet,
-		rightCentroidDistances, rightChildKeys, splitPartition.Level())
+	leftCentroidDistances := centroidDistances[:len(tempLeftOffsets):len(tempLeftOffsets)]
+	leftChildKeys := childKeys[:len(tempLeftOffsets):len(tempLeftOffsets)]
+	split.Left.Init(ctx, fp.index.quantizer, leftVectorSet,
+		leftCentroidDistances, leftChildKeys, split.Partition.Level())
 
-	return leftSplit, rightSplit
+	rightCentroidDistances := centroidDistances[len(tempLeftOffsets):]
+	rightChildKeys := childKeys[len(tempLeftOffsets):]
+	split.Right.Init(ctx, fp.index.quantizer, rightVectorSet,
+		rightCentroidDistances, rightChildKeys, split.Partition.Level())
 }
 
-// moveVectorsToSiblings checks each vector in the new split partition to see if
-// it's now closer to a sibling partition's centroid than it is to its own
-// centroid. If that's true, then move the vector to the sibling partition. Pass
-// function to lazily fetch parent vectors, as it's expensive and is only needed
-// if vectors actually need to be moved.
-func (fp *fixupProcessor) moveVectorsToSiblings(
-	ctx context.Context,
-	txn vecstore.Txn,
-	parentPartitionKey vecstore.PartitionKey,
-	parentPartition *vecstore.Partition,
-	getParentVectors func() (vector.Set, error),
-	oldPartitionKey vecstore.PartitionKey,
-	split *splitData,
-) error {
-	for i := 0; i < split.Vectors.Count; i++ {
-		if split.Vectors.Count == 1 && split.Partition.Level() != vecstore.LeafLevel {
-			// Don't allow so many vectors to be moved that a non-leaf partition
-			// ends up empty. This would violate a key constraint that the K-means
-			// tree is always fully balanced.
-			break
-		}
-
-		vector := split.Vectors.At(i)
-
-		// If distance to new centroid is <= distance to old centroid, then skip.
-		newCentroidDistance := split.Partition.QuantizedSet().GetCentroidDistances()[i]
-		if newCentroidDistance <= split.OldCentroidDistances[i] {
-			continue
-		}
-
-		// Get the full vectors for the parent partition's children.
-		parentVectors, err := getParentVectors()
-		if err != nil {
-			return err
-		}
-
-		// Check whether the vector is closer to a sibling centroid than its own
-		// new centroid.
-		minDistanceOffset := -1
-		for parent := 0; parent < parentVectors.Count; parent++ {
-			squaredDistance := num32.L2Distance(parentVectors.At(parent), vector)
-			if squaredDistance < newCentroidDistance {
-				newCentroidDistance = squaredDistance
-				minDistanceOffset = parent
-			}
-		}
-		if minDistanceOffset == -1 {
-			continue
-		}
-
-		siblingPartitionKey := parentPartition.ChildKeys()[minDistanceOffset].PartitionKey
-		log.VEventf(ctx, 3, "moving vector from splitting partition %d to sibling partition %d",
-			oldPartitionKey, siblingPartitionKey)
-
-		// Found a sibling child partition that's closer, so insert the vector
-		// there instead.
-		childKey := split.Partition.ChildKeys()[i]
-		_, err = fp.index.addToPartition(ctx, txn, parentPartitionKey, siblingPartitionKey, vector, childKey)
-		if err != nil {
-			return errors.Wrapf(err, "moving vector to partition %d", siblingPartitionKey)
-		}
-
-		// Remove the vector's data from the new partition. The remove operation
-		// backfills data at the current index with data from the last index.
-		// Therefore, don't increment the iteration index, since the next item
-		// is in the same location as the last.
-		split.ReplaceWithLast(i)
-		i--
-	}
-
-	return nil
-}
-
-// linkNearbyVectors searches for vectors at the same level that are close to
-// the given split partition's centroid. If they are closer than they are to
-// their own centroid, then move them to the split partition.
-func (fp *fixupProcessor) linkNearbyVectors(
-	ctx context.Context,
-	txn vecstore.Txn,
-	oldPartitionKey vecstore.PartitionKey,
-	partition *vecstore.Partition,
+func (fp *fixupProcessor) findClosestVectors(
+	ctx context.Context, txn vecstore.Txn, sibling *siblingSplitData,
 ) error {
 	// TODO(andyk): Add way to filter search set in order to skip vectors deeper
 	// down in the search rather than afterwards.
 	searchCtx := fp.reuseSearchContext(ctx, txn)
 	searchCtx.Options = SearchOptions{ReturnVectors: true}
-	searchCtx.Level = partition.Level()
-	searchCtx.Randomized = partition.Centroid()
+	searchCtx.Level = sibling.Partition.Level()
+	searchCtx.Randomized = sibling.Partition.Centroid()
 
-	// Don't link more vectors than the number of remaining slots in the split
+	// Don't move more vectors than the number of remaining slots in the split
 	// partition, to avoid triggering another split.
-	maxResults := fp.index.options.MaxPartitionSize - partition.Count()
+	maxResults := fp.index.options.MaxPartitionSize - sibling.Partition.Count()
 	if maxResults < 1 {
 		return nil
 	}
@@ -698,13 +642,117 @@ func (fp *fixupProcessor) linkNearbyVectors(
 		return err
 	}
 
+	sibling.Closest = searchSet.PopUnsortedResults()
+	return nil
+}
+
+// moveSplitVectorsToSiblings checks each vector in the new split partition to
+// see if it's now closer to a sibling partition's centroid than it is to its
+// own centroid. If that's true, then move the vector to the sibling partition.
+// Pass function to lazily fetch parent vectors, as it's expensive and is only
+// needed if vectors actually need to be moved.
+func (fp *fixupProcessor) moveSplitVectorsToSiblings(
+	ctx context.Context, split *splitData, sibling *siblingSplitData,
+) (err error) {
+	for i := 0; i < sibling.Vectors.Count; i++ {
+		if sibling.Vectors.Count == 1 && sibling.Partition.Level() != vecstore.LeafLevel {
+			// Don't allow so many vectors to be moved that a non-leaf partition
+			// ends up empty. This would violate a key constraint that the K-means
+			// tree is always fully balanced.
+			break
+		}
+
+		vector := sibling.Vectors.At(i)
+
+		// If distance to new centroid is <= distance to old centroid, then skip.
+		newCentroidDistance := sibling.Partition.QuantizedSet().GetCentroidDistances()[i]
+		if newCentroidDistance <= sibling.OldCentroidDistances[i] {
+			continue
+		}
+
+		// Ensure that the full vectors for the parent partition have been fetched.
+		if split.ParentVectors.Dims == 0 {
+			err = fp.runInTransaction(ctx, func(txn vecstore.Txn) error {
+				split.ParentVectors, err = fp.getFullVectorsForPartition(
+					ctx, txn, split.ParentPartitionKey, split.ParentPartition)
+				return err
+			})
+			if err != nil {
+				return err
+			}
+		}
+
+		// Check whether the vector is closer to a sibling centroid than its own
+		// new centroid.
+		minDistanceOffset := -1
+		for parent := 0; parent < split.ParentVectors.Count; parent++ {
+			squaredDistance := num32.L2Distance(split.ParentVectors.At(parent), vector)
+			if squaredDistance < newCentroidDistance {
+				newCentroidDistance = squaredDistance
+				minDistanceOffset = parent
+			}
+		}
+		if minDistanceOffset == -1 {
+			continue
+		}
+
+		siblingPartitionKey := split.ParentPartition.ChildKeys()[minDistanceOffset].PartitionKey
+		log.VEventf(ctx, 3, "moving vector from splitting partition %d to sibling partition %d",
+			split.PartitionKey, siblingPartitionKey)
+
+		// Found a sibling child partition that's closer, so move the vector there.
+		err = fp.runInTransaction(ctx, func(txn vecstore.Txn) error {
+			childKey := sibling.Partition.ChildKeys()[i]
+			err = fp.index.moveToPartition(ctx, txn, split.ParentPartitionKey,
+				split.PartitionKey, siblingPartitionKey, vector, childKey)
+			if err != nil {
+				if errors.Is(err, vecstore.ErrPartitionNotFound) {
+					// Another process must have deleted the partition, so vector
+					// move is no-op.
+					log.VEventf(ctx, 2,
+						"vector move from partition %d to sibling partition %d failed, partition not found",
+						split.PartitionKey, siblingPartitionKey)
+					return nil
+				} else if errors.Is(err, vecstore.ErrMoveNotAllowed) {
+					// Vector can't be moved, so skip it.
+					log.VEventf(ctx, 2,
+						"vector move from partition %d to sibling partition %d failed, disallowed",
+						split.PartitionKey, siblingPartitionKey)
+					return nil
+				}
+				return errors.Wrapf(err, "moving vector from %d to sibling partition %d",
+					split.PartitionKey, siblingPartitionKey)
+			}
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+
+		// Remove the vector's data from the new partition. The remove operation
+		// backfills data at the current index with data from the last index.
+		// Therefore, don't increment the iteration index, since the next item
+		// is in the same location as the last.
+		sibling.ReplaceWithLast(i)
+		i--
+	}
+
+	return nil
+}
+
+// moveVectorsFromSiblings searches for vectors at the same level that are close
+// to a split sibling partition's centroid. If the nearby vectors are closer
+// than they are to their own centroid, then move them to the split sibling
+// partition.
+func (fp *fixupProcessor) moveVectorsFromSiblings(
+	ctx context.Context, split *splitData, sibling *siblingSplitData,
+) error {
 	tempVector := fp.workspace.AllocVector(fp.index.quantizer.GetRandomDims())
 	defer fp.workspace.FreeVector(tempVector)
 
-	// Filter the results.
-	results := searchSet.PopUnsortedResults()
-	for i := range results {
-		result := &results[i]
+	// Filter the closest results.
+	for i := range sibling.Closest {
+		result := &sibling.Closest[i]
 
 		// Skip vectors that are closer to their own centroid than they are to
 		// the split partition's centroid.
@@ -712,36 +760,43 @@ func (fp *fixupProcessor) linkNearbyVectors(
 			continue
 		}
 
-		log.VEventf(ctx, 3, "linking vector from partition %d to splitting partition %d",
-			result.ChildKey.PartitionKey, oldPartitionKey)
+		log.VEventf(ctx, 3, "moving vector from partition %d to split sibling partition %d",
+			result.ChildKey.PartitionKey, sibling.PartitionKey)
 
 		// Leaf vectors from the primary index need to be randomized.
 		vector := result.Vector
-		if partition.Level() == vecstore.LeafLevel {
+		if sibling.Partition.Level() == vecstore.LeafLevel {
 			fp.index.quantizer.RandomizeVector(ctx, vector, tempVector, false /* invert */)
 			vector = tempVector
 		}
 
-		// Remove the vector from the other partition.
-		count, err := fp.index.removeFromPartition(ctx, txn, result.ParentPartitionKey, result.ChildKey)
+		// Move the vector to the sibling partition.
+		err := fp.runInTransaction(ctx, func(txn vecstore.Txn) error {
+			err := fp.index.moveToPartition(ctx, txn, split.ParentPartitionKey,
+				result.ParentPartitionKey, sibling.PartitionKey, vector, result.ChildKey)
+			if err != nil {
+				if errors.Is(err, vecstore.ErrPartitionNotFound) {
+					// Another process must have deleted the partition, so vector
+					// move is no-op.
+					log.VEventf(ctx, 2,
+						"vector move from sibling partition %d to partition %d failed, partition not found",
+						result.ParentPartitionKey, split.PartitionKey)
+					return nil
+				} else if errors.Is(err, vecstore.ErrMoveNotAllowed) {
+					// Vector can't be moved, so skip it.
+					log.VEventf(ctx, 2,
+						"vector move from sibling partition %d to partition %d failed, disallowed",
+						result.ParentPartitionKey, split.PartitionKey)
+					return nil
+				}
+				return errors.Wrapf(err, "moving vector from sibling partition %d to partition %d",
+					result.ParentPartitionKey, split.PartitionKey)
+			}
+			return nil
+		})
 		if err != nil {
 			return err
 		}
-		if count == 0 && partition.Level() > vecstore.LeafLevel {
-			// Removing the vector will result in an empty non-leaf partition, which
-			// is not allowed, as the K-means tree would not be fully balanced. Add
-			// the vector back to the partition. This is a very rare case and that
-			// partition is likely to be merged away regardless.
-			_, err = fp.index.store.AddToPartition(
-				ctx, txn, result.ParentPartitionKey, vector, result.ChildKey)
-			if err != nil {
-				return err
-			}
-			continue
-		}
-
-		// Add the vector to the split partition.
-		partition.Add(ctx, vector, result.ChildKey)
 	}
 
 	return nil
@@ -910,6 +965,7 @@ func (fp *fixupProcessor) deleteVector(
 // getFullVectorsForPartition fetches the full-size vectors (potentially
 // randomized by the quantizer) that are quantized by the given partition.
 // Discard any dangling vectors in the partition.
+// NOTE: This method can update the given partition.
 func (fp *fixupProcessor) getFullVectorsForPartition(
 	ctx context.Context,
 	txn vecstore.Txn,
@@ -954,6 +1010,28 @@ func (fp *fixupProcessor) getFullVectorsForPartition(
 	}
 
 	return vectors, nil
+}
+
+// runInTransaction runs the given function in the scope of a store transaction.
+// If the function returns without error, the transaction is committed, else it
+// is aborted.
+func (fp *fixupProcessor) runInTransaction(
+	ctx context.Context, fn func(txn vecstore.Txn) error,
+) error {
+	txn, err := fp.index.store.BeginTransaction(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err == nil {
+			err = fp.index.store.CommitTransaction(ctx, txn)
+		} else {
+			err = errors.CombineErrors(err, fp.index.store.AbortTransaction(ctx, txn))
+		}
+	}()
+
+	err = fn(txn)
+	return err
 }
 
 // reuseSearchContext initializes the reusable search context, including reusing

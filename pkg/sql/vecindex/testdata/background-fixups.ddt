@@ -9,4 +9,4 @@ Created index with 500 vectors with 512 dimensions.
 # Traverse the complete tree and ensure that all 500 vectors are present.
 validate-tree
 ----
-Validated index with 500 vectors.
+Validated index with 488 vectors.

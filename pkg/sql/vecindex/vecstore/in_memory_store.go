@@ -269,6 +269,47 @@ func (s *InMemoryStore) RemoveFromPartition(
 	return partition.Count(), nil
 }
 
+func (s *InMemoryStore) MoveToPartition(
+	ctx context.Context,
+	txn Txn,
+	sourcePartitionKey PartitionKey,
+	destPartitionKey PartitionKey,
+	vector vector.T,
+	childKey ChildKey,
+) (sourceCount int, destCount int, err error) {
+	s.acquireTxnLock(txn, dataLock, true /* updating */)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	sourcePartition, ok := s.mu.partitions[sourcePartitionKey]
+	if !ok {
+		return 0, 0, ErrPartitionNotFound
+	}
+
+	destPartition, ok := s.mu.partitions[destPartitionKey]
+	if !ok {
+		return 0, 0, ErrPartitionNotFound
+	}
+
+	if sourcePartition.Count() == 1 && sourcePartition.Level() > LeafLevel {
+		// Performing the move would leave a non-leaf partition with zero vectors,
+		// which is not allowed, since it would violate the constraint that the
+		// K-means tree is always fully balanced.
+		return 0, 0, ErrMoveNotAllowed
+	}
+
+	if destPartition.Add(ctx, vector, childKey) {
+		s.reportPartitionSizeLocked(destPartition.Count())
+	}
+
+	if sourcePartition.ReplaceWithLastByKey(childKey) {
+		s.reportPartitionSizeLocked(sourcePartition.Count())
+	}
+
+	return sourcePartition.Count(), destPartition.Count(), nil
+}
+
 // SearchPartitions implements the Store interface.
 func (s *InMemoryStore) SearchPartitions(
 	ctx context.Context,

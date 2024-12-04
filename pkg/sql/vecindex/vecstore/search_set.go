@@ -169,6 +169,8 @@ type SearchSet struct {
 	// among the best results.
 	MaxExtraResults int
 
+	ExcludePartitions []PartitionKey
+
 	// MatchKey, if non-nil, filters out all search candidates that do not have
 	// a matching primary key.
 	MatchKey PrimaryKey
@@ -188,6 +190,12 @@ func (ss *SearchSet) Add(candidate *SearchResult) {
 	if ss.MatchKey != nil && !bytes.Equal(ss.MatchKey, candidate.ChildKey.PrimaryKey) {
 		// Filter out candidates without a matching primary key.
 		return
+	}
+
+	for _, partitionKey := range ss.ExcludePartitions {
+		if candidate.ChildKey.PartitionKey == partitionKey {
+			return
+		}
 	}
 
 	// Fast path where no pruning is necessary.

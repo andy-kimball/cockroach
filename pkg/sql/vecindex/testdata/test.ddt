@@ -1,0 +1,49 @@
+# ----------
+# Test moving vectors to other partitions during split.
+# ----------
+new-index min-partition-size=1 max-partition-size=4 beam-size=2
+vec1: (0, 0)
+vec2: (-1, 1)
+vec3: (1, 1)
+vec4: (0, -2)
+vec5: (-1, -2)
+vec6: (1, -2)
+----
+• 1 (0, -0.6667)
+│
+├───• 2 (0, -2)
+│   │
+│   ├───• vec6 (1, -2)
+│   ├───• vec5 (-1, -2)
+│   └───• vec4 (0, -2)
+│
+└───• 3 (0, 0.6667)
+    │
+    ├───• vec3 (1, 1)
+    ├───• vec2 (-1, 1)
+    └───• vec1 (0, 0)
+
+# Add vectors to partition 3 until it splits, leaving vec1 further away from
+# the new centroids than to the centroid of partition 2. Expect it to move to
+# partition 2.
+insert
+vec7: (-4, 4)
+vec8: (4, 4)
+----
+• 1 (0, -0.6667)
+│
+├───• 2 (0, -2)
+│   │
+│   ├───• vec6 (1, -2)
+│   ├───• vec5 (-1, -2)
+│   └───• vec4 (0, -2)
+│
+├───• 4 (-2.5, 2.5)
+│   │
+│   ├───• vec7 (-4, 4)
+│   └───• vec2 (-1, 1)
+│
+└───• 5 (1.6667, 1.6667)
+    │
+    ├───• vec8 (4, 4)
+    └───• vec3 (1, 1)

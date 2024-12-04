@@ -371,6 +371,9 @@ func (vi *VectorIndex) insertHelper(
 	_, err = vi.addToPartition(parentSearchCtx.Ctx, parentSearchCtx.Txn, parentPartitionKey,
 		partitionKey, parentSearchCtx.Randomized, childKey)
 	if errors.Is(err, vecstore.ErrPartitionNotFound) {
+		_, err = vi.addToPartition(parentSearchCtx.Ctx, parentSearchCtx.Txn, parentPartitionKey,
+			partitionKey, parentSearchCtx.Randomized, childKey)
+
 		// Retry the insert after root partition cache invalidation.
 		if !allowRetry {
 			// This indicates index corruption, since it should only require a
@@ -426,6 +429,31 @@ func (vi *VectorIndex) removeFromPartition(
 	return count, err
 }
 
+func (vi *VectorIndex) moveToPartition(
+	ctx context.Context,
+	txn vecstore.Txn,
+	parentPartitionKey vecstore.PartitionKey,
+	oldPartitionKey vecstore.PartitionKey,
+	newPartitionKey vecstore.PartitionKey,
+	vector vector.T,
+	childKey vecstore.ChildKey,
+) error {
+	oldCount, newCount, err := vi.store.MoveToPartition(
+		ctx, txn, oldPartitionKey, newPartitionKey, vector, childKey)
+	if err != nil {
+		return errors.Wrapf(err,
+			"moving vector from partition %d to partition %d", oldPartitionKey, newPartitionKey)
+	}
+	if oldCount < vi.options.MinPartitionSize {
+		vi.fixups.AddMerge(ctx, parentPartitionKey, oldPartitionKey)
+	}
+	if newCount > vi.options.MaxPartitionSize {
+		vi.fixups.AddSplit(ctx, parentPartitionKey, newPartitionKey)
+	}
+
+	return err
+}
+
 // searchHelper contains the core search logic for the K-means tree. It begins
 // at the root and proceeds downwards, breadth-first. At each level of the tree,
 // it searches the subset of partitions that have centroids nearest to the query
@@ -446,7 +474,7 @@ func (vi *VectorIndex) searchHelper(
 	//    expand the beam size (up to 4x the base beam size).
 	maxResults := max(
 		searchSet.MaxResults, vi.options.QualitySamples, searchCtx.Options.BaseBeamSize*4)
-	subSearchSet := vecstore.SearchSet{MaxResults: maxResults}
+	subSearchSet := vecstore.SearchSet{MaxResults: maxResults, ExcludePartitions: searchSet.ExcludePartitions}
 	searchCtx.tempResults[0] = vecstore.SearchResult{
 		ChildKey: vecstore.ChildKey{PartitionKey: vecstore.RootKey}}
 	searchLevel, err := vi.searchChildPartitions(searchCtx, &subSearchSet, searchCtx.tempResults[:])

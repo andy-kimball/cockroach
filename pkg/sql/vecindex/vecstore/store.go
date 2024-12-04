@@ -20,6 +20,8 @@ var ErrPartitionNotFound = errors.New("partition not found")
 // be found because it has been deleted in the primary index.
 var ErrVectorNotFound = errors.New("vector not found")
 
+var ErrMoveNotAllowed = errors.New("vector move not allowed")
+
 // VectorWithKey contains a original, full-size vector and its referencing key.
 type VectorWithKey struct {
 	// Key is a partition key (for an interior partition) or a primary key (for
@@ -88,6 +90,20 @@ type Store interface {
 	RemoveFromPartition(
 		ctx context.Context, txn Txn, partitionKey PartitionKey, childKey ChildKey,
 	) (int, error)
+
+	// MoveToPartition moves the given vector and its associated child key from
+	// the source partition to the destination partition. It returns the count
+	// of quantized vectors in the partitions or ErrPartitionNotFound if either
+	// one cannot be found, or ErrMoveNotAllowed if moving the vector would
+	// result in an empty non-leaf partition.
+	MoveToPartition(
+		ctx context.Context,
+		txn Txn,
+		sourcePartitionKey PartitionKey,
+		destPartitionKey PartitionKey,
+		vector vector.T,
+		childKey ChildKey,
+	) (sourceCount int, destCount int, err error)
 
 	// SearchPartitions finds vectors that are closest to the given query vector.
 	// Only partitions with the given keys are searched, and all of them must be
